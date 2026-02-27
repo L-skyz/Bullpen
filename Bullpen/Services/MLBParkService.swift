@@ -257,27 +257,22 @@ class MLBParkService {
     // MARK: - 글쓰기
 
     func writePost(boardId: String, maemuri: String, title: String, content: String) async throws {
-        guard let url = URL(string: "\(base)/mp/b.php") else { throw MLBParkError.invalidURL }
-
-        // 글쓰기 폼 페이지에서 hidden 토큰 추출
-        let formHTML = try await fetch("\(base)/mp/b.php?b=\(boardId)&m=write")
-        let doc      = try SwiftSoup.parse(formHTML)
-        let token    = try doc.select("input[name=_token], input[name=csrf]").first()?.val() ?? ""
+        guard let url = URL(string: "\(base)/mp/action.php") else { throw MLBParkError.invalidURL }
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
         req.setValue("\(base)/mp/b.php?b=\(boardId)&m=write", forHTTPHeaderField: "Referer")
+        req.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
 
-        var params: [String: String] = [
-            "b":        boardId,
-            "mode":     "write",
-            "maemuri":  maemuri,
-            "subject":  title,
-            "content":  content,
+        let params: [String: String] = [
+            "m":       "INSERT",
+            "b":       boardId,
+            "maemuri": maemuri,
+            "subject": title,
+            "content": content,
         ]
-        if !token.isEmpty { params["_token"] = token }
         req.httpBody = params.urlEncoded.data(using: .utf8)
 
         let (_, resp) = try await session.data(for: req)
@@ -289,18 +284,22 @@ class MLBParkService {
     // MARK: - 댓글쓰기
 
     func writeComment(boardId: String, postId: String, content: String) async throws {
-        guard let url = URL(string: "\(base)/mp/b.php") else { throw MLBParkError.invalidURL }
+        guard let url = URL(string: "\(base)/mp/action.php") else { throw MLBParkError.invalidURL }
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
         req.setValue("\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=view", forHTTPHeaderField: "Referer")
+        req.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
 
         let params: [String: String] = [
+            "m":       "reply_INSERT",
             "b":       boardId,
             "id":      postId,
-            "mode":    "comment",
+            "prid":    "",
+            "source":  "",
+            "info":    "",
             "content": content,
         ]
         req.httpBody = params.urlEncoded.data(using: .utf8)
