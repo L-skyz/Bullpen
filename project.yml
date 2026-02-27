@@ -3,7 +3,7 @@ name: Bullpen
 options:
   bundleIdPrefix: com.bullpen
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "17.0"
   xcodeVersion: "15.4"
   createIntermediateGroups: true
   developmentLanguage: ko
@@ -15,7 +15,7 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     ENABLE_PREVIEWS: YES
     SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
-    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
 
 targets:
   Bullpen:
