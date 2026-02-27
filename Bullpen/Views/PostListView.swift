@@ -23,6 +23,10 @@ class PostListViewModel: ObservableObject {
             if newPosts.isEmpty { hasMore = false }
             posts.append(contentsOf: newPosts)
             page += 1
+        } catch is CancellationError {
+            // 취소는 정상 (refreshable/task 전환 시) — 에러 표시 안 함
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            // URLSession 취소도 정상
         } catch {
             self.error = error.localizedDescription
         }
@@ -173,45 +177,49 @@ struct PostRowView: View {
     let post: Post
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .center, spacing: 8) {
+            // 손톱 크기 아바타
             ZStack {
                 Circle()
                     .fill(avatarColor(for: post.author))
-                    .frame(width: 42, height: 42)
+                    .frame(width: 22, height: 22)
                 Text(String(post.author.prefix(1)))
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 9, weight: .bold))
                     .foregroundColor(.white)
             }
 
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 3) {
+                // 제목 한 줄 자르기
+                HStack(alignment: .center, spacing: 4) {
+                    if !post.maemuri.isEmpty {
+                        Text(post.maemuri)
+                            .font(.caption2).fontWeight(.semibold)
+                            .foregroundColor(.blue)
+                            .lineLimit(1)
+                    }
+                    Text(post.title)
+                        .font(.subheadline)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if post.commentCount > 0 {
+                        Text("[\(post.commentCount)]")
+                            .font(.caption).fontWeight(.semibold)
+                            .foregroundColor(.red)
+                            .lineLimit(1)
+                    }
+                }
+
+                HStack {
                     Text(post.author)
-                        .font(.subheadline).fontWeight(.semibold)
+                        .font(.caption).foregroundColor(.secondary)
                         .lineLimit(1)
                     Spacer()
                     Text(post.date)
                         .font(.caption).foregroundColor(.secondary)
                 }
-
-                HStack(alignment: .top, spacing: 4) {
-                    if !post.maemuri.isEmpty {
-                        Text(post.maemuri)
-                            .font(.caption2).fontWeight(.semibold)
-                            .foregroundColor(.blue).fixedSize()
-                    }
-                    Text(post.title)
-                        .font(.subheadline).lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                    if post.commentCount > 0 {
-                        Text("[\(post.commentCount)]")
-                            .font(.caption).fontWeight(.semibold)
-                            .foregroundColor(.red).fixedSize()
-                    }
-                }
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
     }
 
     private func avatarColor(for name: String) -> Color {
