@@ -22,45 +22,66 @@ class AuthService: ObservableObject {
     // MARK: - 로그인
 
     func login(id: String, password: String) async throws {
-        // 실제 로그인 엔드포인트: secure.donga.com
-        guard let loginURL = URL(string: "https://secure.donga.com/mlbpark/login.php") else { return }
+        let loginPageURL = "https://secure.donga.com/mlbpark/login.php"
+        // JS가 form action을 trans_exe.php로 동적 변경 후 submit — 실제 엔드포인트
+        let loginActionURL = "https://secure.donga.com/mlbpark/trans_exe.php"
+        let ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
 
-        var req = URLRequest(url: loginURL)
+        // Step 1: GET 로그인 페이지 → 세션 쿠키(gourl 등) 수신
+        if let getURL = URL(string: loginPageURL) {
+            var getReq = URLRequest(url: getURL)
+            getReq.setValue(ua, forHTTPHeaderField: "User-Agent")
+            _ = try? await session.data(for: getReq)
+        }
+
+        // Step 2: POST to trans_exe.php (브라우저와 동일한 실제 엔드포인트)
+        guard let postURL = URL(string: loginActionURL) else { return }
+        var req = URLRequest(url: postURL)
         req.httpMethod = "POST"
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
-        req.setValue("https://secure.donga.com/mlbpark/login.php", forHTTPHeaderField: "Referer")
+        req.setValue(ua, forHTTPHeaderField: "User-Agent")
+        req.setValue(loginPageURL, forHTTPHeaderField: "Referer")
 
-        // 실제 폼 필드: bid=아이디, bpw=비밀번호
         let params: [String: String] = [
-            "bid":     id,
-            "bpw":     password,
-            "gourl":   "https://mlbpark.donga.com/mp",
-            "mlbuser": "1"
+            "bid":          id,
+            "bpw":          password,
+            "gourl":        "https://mlbpark.donga.com/mp",
+            "mlbuser":      "1",
+            "errorChk":     "",
+            "idsave_value": ""
         ]
         req.httpBody = params.urlEncoded.data(using: .utf8)
 
-        let (_, resp) = try await session.data(for: req)
+        let (data, resp) = try await session.data(for: req)
 
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("로그인 실패 (\(http.statusCode))")
         }
 
-        // 성공 여부 = .donga.com 도메인에 인증 쿠키가 실제로 세팅됐는지로 판단
-        // (실패 시 서버가 모든 쿠키를 deleted로 초기화함)
-        let authCookieNames = ["dongauserid", "dusr", "mlbuser", "login_id"]
+        // Step 3: 성공/실패 판단
+        // 실패: 200 OK, secure.donga.com에서 에러 HTML 반환
+        // 성공: 302 redirect → mlbpark.donga.com (URLSession 자동 팔로우)
+        let finalHost = (resp as? HTTPURLResponse)?.url?.host ?? ""
+        if finalHost.contains("secure.donga.com") || finalHost.isEmpty {
+            let html = String(data: data, encoding: .utf8) ?? ""
+            if html.contains("회원이 아니시거나") || html.contains("비밀번호가 틀립니다") ||
+               html.contains("layerPop") {
+                throw MLBParkError.networkError("아이디 또는 비밀번호가 올바르지 않습니다.")
+            }
+            throw MLBParkError.networkError("로그인에 실패했습니다. 다시 시도해주세요.")
+        }
+
+        // Step 4: 성공 — 쿠키에서 닉네임 읽기 (dongausernick)
         let allCookies = HTTPCookieStorage.shared.cookies ?? []
-        let loggedIn = allCookies.contains { cookie in
-            cookie.domain.contains("donga.com") &&
-            authCookieNames.contains(cookie.name) &&
-            !cookie.value.isEmpty && cookie.value != "deleted"
+        if let nick = allCookies.first(where: {
+            $0.domain.contains("donga.com") &&
+            ($0.name == "dongausernick" || $0.name == "dongausernickuni") &&
+            !$0.value.isEmpty && $0.value != "deleted"
+        })?.value {
+            nickname = nick.removingPercentEncoding ?? nick
         }
 
-        guard loggedIn else {
-            throw MLBParkError.networkError("아이디 또는 비밀번호가 올바르지 않습니다.")
-        }
-
-        await fetchProfile()
+        isLoggedIn = true
     }
 
     // MARK: - 로그아웃
@@ -97,12 +118,22 @@ class AuthService: ObservableObject {
     // MARK: - 저장된 세션 확인
 
     private func checkLoginStatus() {
-        let authCookieNames = ["dongauserid", "dusr", "mlbuser", "login_id"]
         let allCookies = HTTPCookieStorage.shared.cookies ?? []
-        isLoggedIn = allCookies.contains { cookie in
-            cookie.domain.contains("donga.com") &&
-            authCookieNames.contains(cookie.name) &&
-            !cookie.value.isEmpty && cookie.value != "deleted"
+        let authCookie = allCookies.first { c in
+            c.domain.contains("donga.com") &&
+            ["dongauserid", "dusr", "mlbuser", "login_id"].contains(c.name) &&
+            !c.value.isEmpty && c.value != "deleted"
+        }
+        isLoggedIn = authCookie != nil
+
+        if isLoggedIn {
+            if let nick = allCookies.first(where: {
+                $0.domain.contains("donga.com") &&
+                ($0.name == "dongausernick" || $0.name == "dongausernickuni") &&
+                !$0.value.isEmpty && $0.value != "deleted"
+            })?.value {
+                nickname = nick.removingPercentEncoding ?? nick
+            }
         }
     }
 }
