@@ -153,6 +153,40 @@ class MLBParkService {
         return posts
     }
 
+    // MARK: - 베스트글
+
+    /// best.php?b={boardId}&m=like|reply|view → 10개 목록
+    func fetchBestPosts(boardId: String, type: String) async throws -> [Post] {
+        let html = try await fetch("\(base)/mp/best.php?b=\(boardId)&m=\(type)")
+        return try parseBestPosts(html: html, boardId: boardId)
+    }
+
+    private func parseBestPosts(html: String, boardId: String) throws -> [Post] {
+        let doc = try SwiftSoup.parse(html)
+        var posts: [Post] = []
+        let rows = try doc.select("table tr")
+        for row in rows {
+            let tds = try row.select("td")
+            guard tds.size() >= 3 else { continue }
+            let rank = try tds.get(0).text().trimmingCharacters(in: .whitespaces)
+            guard !rank.isEmpty, rank.allSatisfy({ $0.isNumber }) else { continue }
+            guard let titleLink = try tds.get(1).select("a.txt").first() else { continue }
+            let title  = try titleLink.text()
+            let href   = try titleLink.attr("href")
+            guard let postId = extractParam("id", from: href) else { continue }
+            let author = try tds.get(2).select("span.nick").first()?.text() ?? tds.get(2).text()
+            let date   = tds.size() > 3
+                ? (try tds.get(3).select("span.date").first()?.text() ?? tds.get(3).text())
+                : ""
+            posts.append(Post(
+                id: postId, boardId: boardId, maemuri: "",
+                title: title, author: author, date: date,
+                views: 0, commentCount: 0, recommendCount: 0
+            ))
+        }
+        return posts
+    }
+
     // MARK: - 게시글 상세
 
     func fetchPostDetail(boardId: String, postId: String) async throws -> PostDetail {

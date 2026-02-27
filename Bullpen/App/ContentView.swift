@@ -12,8 +12,8 @@ struct ContentView: View {
             }
             .tabItem { Label("불펜", systemImage: "flame") }
 
-            BoardsView()
-                .tabItem { Label("게시판", systemImage: "list.bullet.rectangle") }
+            BestPostsView()
+                .tabItem { Label("베스트", systemImage: "star.fill") }
 
             WritePostView()
                 .tabItem { Label("글쓰기", systemImage: "square.and.pencil") }

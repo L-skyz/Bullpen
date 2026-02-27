@@ -80,8 +80,8 @@ struct PostDetailView: View {
 
                             HStack(spacing: 16) {
                                 Label("\(d.recommendCount)", systemImage: "hand.thumbsup")
-                                Label("\(d.views)",           systemImage: "eye")
-                                Label("\(d.commentCount)",    systemImage: "bubble.left")
+                                Label("\(d.views)",          systemImage: "eye")
+                                Label("\(d.comments.count)", systemImage: "bubble.left")
                             }
                             .font(.caption).foregroundColor(.secondary)
                         }
@@ -102,7 +102,7 @@ struct PostDetailView: View {
                                 HStack {
                                     Image(systemName: "bubble.left.and.bubble.right")
                                         .foregroundColor(.secondary)
-                                    Text("댓글 \(d.commentCount)개")
+                                    Text("댓글 \(d.comments.count)개")
                                         .font(.headline)
                                 }
                                 .padding(.horizontal).padding(.top, 12).padding(.bottom, 4)
