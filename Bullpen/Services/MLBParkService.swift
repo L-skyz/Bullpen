@@ -25,6 +25,7 @@ class MLBParkService {
 
     private let base = "https://mlbpark.donga.com"
     private let session: URLSession
+    private var warmedUp = false
 
     private init() {
         let config = URLSessionConfiguration.default
@@ -34,13 +35,23 @@ class MLBParkService {
         session = URLSession(configuration: config)
     }
 
+    // gather.donga.com 쿠키 없으면 mlbpark이 테이블 없는 JS 페이지만 반환
+    private func warmupIfNeeded() async {
+        guard !warmedUp else { return }
+        warmedUp = true
+        guard let url = URL(string: "https://gather.donga.com/?cookie") else { return }
+        _ = try? await session.data(for: URLRequest(url: url))
+    }
+
     // MARK: - 공통 요청
 
     private func fetch(_ urlStr: String) async throws -> String {
+        await warmupIfNeeded()
         guard let url = URL(string: urlStr) else { throw MLBParkError.invalidURL }
         var req = URLRequest(url: url)
-        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+        req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
         req.setValue(base, forHTTPHeaderField: "Referer")
+        req.setValue("ko-KR,ko;q=0.9", forHTTPHeaderField: "Accept-Language")
         let (data, _) = try await session.data(for: req)
         guard let html = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else {
             throw MLBParkError.encodingError
@@ -84,9 +95,9 @@ class MLBParkService {
             let replyRaw     = try titleTd.select("a.replycnt").first()?.text() ?? "[0]"
             let commentCount = Int(replyRaw.filter { $0.isNumber }) ?? 0
 
-            let author = try tds.get(2).text()
-            let date   = try tds.get(3).text()
-            let views  = Int(try tds.get(4).text().filter { $0.isNumber }) ?? 0
+            let author = try tds.get(2).select("span.nick").first()?.text() ?? tds.get(2).text()
+            let date   = try tds.get(3).select("span.date").first()?.text() ?? tds.get(3).text()
+            let views  = Int(try tds.get(4).select("span.viewV").first()?.text() ?? "0") ?? 0
 
             posts.append(Post(
                 id: postId,
