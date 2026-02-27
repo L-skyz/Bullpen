@@ -5,6 +5,10 @@ struct ContentView: View {
 
     var body: some View {
         TabView {
+            // 불펜을 첫 번째 기본 탭으로
+            PostListView(board: Board(id: "bullpen", name: "불펜"))
+                .tabItem { Label("불펜", systemImage: "flame") }
+
             BoardsView()
                 .tabItem { Label("게시판", systemImage: "list.bullet.rectangle") }
 

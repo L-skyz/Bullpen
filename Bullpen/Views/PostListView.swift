@@ -37,45 +37,48 @@ struct PostListView: View {
     }
 
     var body: some View {
-        List {
-            // 탭 세그먼트
-            Section {
-                Picker("", selection: $tab) {
-                    ForEach(ListTab.allCases, id: \.self) { t in
-                        Text(t.rawValue).tag(t)
+        NavigationStack {
+            List {
+                Section {
+                    Picker("", selection: $tab) {
+                        ForEach(ListTab.allCases, id: \.self) { t in
+                            Text(t.rawValue).tag(t)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .listRowInsets(.init(top: 8, leading: 8, bottom: 8, trailing: 8))
+                .listRowBackground(Color.clear)
+
+                ForEach(vm.posts) { post in
+                    NavigationLink(value: post) {
+                        PostRowView(post: post)
+                    }
+                    .onAppear {
+                        if post.id == vm.posts.last?.id {
+                            Task { await vm.load(boardId: board.id) }
+                        }
                     }
                 }
-                .pickerStyle(.segmented)
-            }
-            .listRowInsets(.init(top: 8, leading: 8, bottom: 8, trailing: 8))
-            .listRowBackground(Color.clear)
 
-            ForEach(vm.posts) { post in
-                NavigationLink(value: post) {
-                    PostRowView(post: post)
+                if vm.isLoading {
+                    HStack { Spacer(); ProgressView(); Spacer() }
+                        .listRowBackground(Color.clear)
                 }
-                .onAppear {
-                    // 마지막 항목 근처에서 다음 페이지 로드
-                    if post.id == vm.posts.last?.id {
-                        Task { await vm.load(boardId: board.id) }
-                    }
+                if let err = vm.error {
+                    Text(err).foregroundColor(.red).font(.caption)
                 }
             }
-
-            if vm.isLoading {
-                HStack { Spacer(); ProgressView(); Spacer() }
-                    .listRowBackground(Color.clear)
+            .listStyle(.plain)
+            .navigationTitle(board.name)
+            .navigationBarTitleDisplayMode(.large)
+            .navigationDestination(for: Post.self) { post in
+                PostDetailView(boardId: post.boardId, postId: post.id)
             }
-            if let err = vm.error {
-                Text(err).foregroundColor(.red).font(.caption)
-            }
+            .task { await vm.load(boardId: board.id, reset: true) }
+            .refreshable { await vm.load(boardId: board.id, reset: true) }
+            .onChange(of: tab) { _ in Task { await vm.load(boardId: board.id, reset: true) } }
         }
-        .listStyle(.plain)
-        .navigationTitle(board.name)
-        .navigationBarTitleDisplayMode(.large)
-        .task { await vm.load(boardId: board.id, reset: true) }
-        .refreshable { await vm.load(boardId: board.id, reset: true) }
-        .onChange(of: tab) { _ in Task { await vm.load(boardId: board.id, reset: true) } }
     }
 }
 

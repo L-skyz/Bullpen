@@ -59,37 +59,40 @@ class MLBParkService {
         let doc = try SwiftSoup.parse(html)
         var posts: [Post] = []
 
-        // 실시간/주간/월간 모두 커버
-        let items = try doc.select("li.items")
+        // table tr 구조: td[0]=번호, td[1]=말머리+제목, td[2]=작성자, td[3]=날짜, td[4]=조회수
+        let rows = try doc.select("table tr")
+        for row in rows {
+            let tds = try row.select("td")
+            guard tds.size() >= 4 else { continue }
 
-        for item in items {
-            guard let titleEl = try item.select("a.title").first() else { continue }
-            let href = try titleEl.attr("href")
+            // 첫번째 td가 숫자(글번호)인 행만 처리 (공지 제외)
+            let numText = try tds.get(0).text().trimmingCharacters(in: .whitespaces)
+            guard numText.allSatisfy({ $0.isNumber }), numText.count >= 5 else { continue }
+
+            let titleTd = tds.get(1)
+
+            // 말머리: a.list_word
+            let maemuri = try titleTd.select("a.list_word").first()?.text() ?? ""
+
+            // 제목: a.txt
+            guard let titleLink = try titleTd.select("a.txt").first() else { continue }
+            let title = try titleLink.text()
+            let href  = try titleLink.attr("href")
             guard let postId = extractParam("id", from: href) else { continue }
 
-            // 말머리: span.txt 제외 나머지 텍스트
-            let titleText = try titleEl.select("span.txt").first()?.text() ?? titleEl.text()
-            let fullText  = try titleEl.text()
-            let maemuri   = fullText
-                .replacingOccurrences(of: titleText, with: "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
-
-            // 댓글 "[24]" → 24
-            let replyRaw    = try item.select("span.replycont").first()?.text() ?? "[0]"
+            // 댓글수: a.replycnt → "[8]" → 8
+            let replyRaw     = try titleTd.select("a.replycnt").first()?.text() ?? "[0]"
             let commentCount = Int(replyRaw.filter { $0.isNumber }) ?? 0
 
-            let viewsRaw = try item.select("span.views").first()?.text() ?? "0"
-            let views    = Int(viewsRaw.filter { $0.isNumber }) ?? 0
-
-            let author = try item.select(".nick, .writer, .id").first()?.text() ?? ""
-            let date   = try item.select(".date, .time, .ago, .rdate").first()?.text() ?? ""
+            let author = try tds.get(2).text()
+            let date   = try tds.get(3).text()
+            let views  = Int(try tds.get(4).text().filter { $0.isNumber }) ?? 0
 
             posts.append(Post(
                 id: postId,
                 boardId: boardId,
                 maemuri: maemuri,
-                title: titleText,
+                title: title,
                 author: author,
                 date: date,
                 views: views,
