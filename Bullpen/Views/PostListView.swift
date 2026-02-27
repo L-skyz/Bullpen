@@ -148,14 +148,21 @@ struct PostRowView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(avatarColor(for: post.author))
-                    .frame(width: 22, height: 22)
-                Text(String(post.author.prefix(1)))
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundColor(.white)
+            AsyncImage(url: URL(string: post.avatarUrl)) { phase in
+                switch phase {
+                case .success(let img):
+                    img.resizable().scaledToFill()
+                default:
+                    ZStack {
+                        Circle().fill(avatarColor(for: post.author))
+                        Text(String(post.author.prefix(1)))
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                }
             }
+            .frame(width: 28, height: 28)
+            .clipShape(Circle())
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .center, spacing: 4) {

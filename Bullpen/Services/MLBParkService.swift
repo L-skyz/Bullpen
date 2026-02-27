@@ -136,19 +136,16 @@ class MLBParkService {
             let replyRaw     = try titleTd.select("a.replycnt").first()?.text() ?? "[0]"
             let commentCount = Int(replyRaw.filter { $0.isNumber }) ?? 0
 
-            let author = try tds.get(2).select("span.nick").first()?.text() ?? tds.get(2).text()
-            let date   = try tds.get(3).select("span.date").first()?.text() ?? tds.get(3).text()
-            let views  = Int(try tds.get(4).select("span.viewV").first()?.text() ?? "0") ?? 0
+            let authorTd  = tds.get(2)
+            let author    = try authorTd.select("span.nick").first()?.text() ?? authorTd.text()
+            let avatarUrl = try authorTd.select("span.photo img").first()?.attr("src") ?? ""
+            let date      = try tds.get(3).select("span.date").first()?.text() ?? tds.get(3).text()
+            let views     = Int(try tds.get(4).select("span.viewV").first()?.text() ?? "0") ?? 0
 
             posts.append(Post(
-                id: postId,
-                boardId: boardId,
-                maemuri: maemuri,
-                title: title,
-                author: author,
-                date: date,
-                views: views,
-                commentCount: commentCount,
+                id: postId, boardId: boardId, maemuri: maemuri,
+                title: title, author: author, avatarUrl: avatarUrl,
+                date: date, views: views, commentCount: commentCount,
                 recommendCount: 0
             ))
         }
@@ -176,14 +173,16 @@ class MLBParkService {
             let title  = try titleLink.text()
             let href   = try titleLink.attr("href")
             guard let postId = extractParam("id", from: href) else { continue }
-            let author = try tds.get(2).select("span.nick").first()?.text() ?? tds.get(2).text()
-            let date   = tds.size() > 3
+            let authorTd  = tds.get(2)
+            let author    = try authorTd.select("span.nick").first()?.text() ?? authorTd.text()
+            let avatarUrl = try authorTd.select("span.photo img").first()?.attr("src") ?? ""
+            let date      = tds.size() > 3
                 ? (try tds.get(3).select("span.date").first()?.text() ?? tds.get(3).text())
                 : ""
             posts.append(Post(
                 id: postId, boardId: boardId, maemuri: "",
-                title: title, author: author, date: date,
-                views: 0, commentCount: 0, recommendCount: 0
+                title: title, author: author, avatarUrl: avatarUrl,
+                date: date, views: 0, commentCount: 0, recommendCount: 0
             ))
         }
         return posts
