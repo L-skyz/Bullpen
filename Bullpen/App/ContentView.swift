@@ -1,65 +1,44 @@
 import SwiftUI
 import UIKit
 
-// UIScreenEdgePanGestureRecognizer를 SwiftUI에 연결
-struct EdgePanGestureView: UIViewRepresentable {
+// 왼쪽 엣지(44pt)만 hitTest 통과, 나머지는 nil → 하위 뷰에 터치 전달
+private class LeftEdgeView: UIView {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        point.x <= 44 ? self : nil
+    }
+}
+
+struct EdgeOpenGestureView: UIViewRepresentable {
     var onOpen: () -> Void
-    var onClose: () -> Void
     var isEnabled: Bool
 
-    func makeCoordinator() -> Coordinator { Coordinator(onOpen: onOpen, onClose: onClose) }
+    func makeCoordinator() -> Coordinator { Coordinator(onOpen: onOpen) }
 
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
+    func makeUIView(context: Context) -> LeftEdgeView {
+        let view = LeftEdgeView()
         view.backgroundColor = .clear
-
-        // 왼쪽 엣지에서 오른쪽으로 → 드로어 열기
-        let openGesture = UIScreenEdgePanGestureRecognizer(
+        let g = UIScreenEdgePanGestureRecognizer(
             target: context.coordinator,
-            action: #selector(Coordinator.handleOpen(_:))
+            action: #selector(Coordinator.handle(_:))
         )
-        openGesture.edges = .left
-        view.addGestureRecognizer(openGesture)
-
-        // 전체 영역 오른→왼 스와이프 → 드로어 닫기
-        let closeGesture = UIPanGestureRecognizer(
-            target: context.coordinator,
-            action: #selector(Coordinator.handleClose(_:))
-        )
-        view.addGestureRecognizer(closeGesture)
-
-        context.coordinator.openGesture = openGesture
-        context.coordinator.closeGesture = closeGesture
+        g.edges = .left
+        view.addGestureRecognizer(g)
+        context.coordinator.gesture = g
         return view
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {
+    func updateUIView(_ uiView: LeftEdgeView, context: Context) {
         context.coordinator.onOpen = onOpen
-        context.coordinator.onClose = onClose
-        context.coordinator.openGesture?.isEnabled = isEnabled
-        context.coordinator.closeGesture?.isEnabled = isEnabled
+        context.coordinator.gesture?.isEnabled = isEnabled
     }
 
     class Coordinator: NSObject {
         var onOpen: () -> Void
-        var onClose: () -> Void
-        weak var openGesture: UIScreenEdgePanGestureRecognizer?
-        weak var closeGesture: UIPanGestureRecognizer?
+        weak var gesture: UIScreenEdgePanGestureRecognizer?
+        init(onOpen: @escaping () -> Void) { self.onOpen = onOpen }
 
-        init(onOpen: @escaping () -> Void, onClose: @escaping () -> Void) {
-            self.onOpen = onOpen
-            self.onClose = onClose
-        }
-
-        @objc func handleOpen(_ r: UIScreenEdgePanGestureRecognizer) {
+        @objc func handle(_ r: UIScreenEdgePanGestureRecognizer) {
             if r.state == .ended { onOpen() }
-        }
-
-        @objc func handleClose(_ r: UIPanGestureRecognizer) {
-            if r.state == .ended {
-                let t = r.translation(in: r.view)
-                if t.x < -60 && abs(t.y) < 80 { onClose() }
-            }
         }
     }
 }
@@ -100,13 +79,12 @@ struct ContentView: View {
                 }
             }
             .overlay {
-                EdgePanGestureView(
-                    onOpen:  { withAnimation(.easeInOut(duration: 0.25)) { showDrawer = true } },
-                    onClose: { withAnimation(.easeInOut(duration: 0.25)) { showDrawer = false } },
-                    isEnabled: navPath.isEmpty
+                EdgeOpenGestureView(
+                    onOpen: { withAnimation(.easeInOut(duration: 0.25)) { showDrawer = true } },
+                    isEnabled: navPath.isEmpty && !showDrawer
                 )
-                .allowsHitTesting(true)
                 .ignoresSafeArea()
+                .allowsHitTesting(!showDrawer)
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
