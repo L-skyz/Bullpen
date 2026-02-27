@@ -8,7 +8,7 @@ class PostListViewModel: ObservableObject {
     @Published var hasMore = true
     private var page = 1
 
-    func load(boardId: String, maemuri: String? = nil, reset: Bool = false) async {
+    func load(boardId: String, maemuri: String? = nil, keyword: String? = nil, reset: Bool = false) async {
         let startPage = reset ? 1 : page
         if reset { hasMore = true }
         guard hasMore else { return }
@@ -16,7 +16,9 @@ class PostListViewModel: ObservableObject {
         error = nil
         do {
             let newPosts: [Post]
-            if let m = maemuri, !m.isEmpty {
+            if let kw = keyword, !kw.isEmpty {
+                newPosts = try await MLBParkService.shared.fetchPostsByKeyword(boardId: boardId, keyword: kw, page: startPage)
+            } else if let m = maemuri, !m.isEmpty {
                 newPosts = try await MLBParkService.shared.fetchPostsByMaemuri(boardId: boardId, maemuri: m, page: startPage)
             } else {
                 newPosts = try await MLBParkService.shared.fetchPosts(boardId: boardId, page: startPage)
@@ -42,6 +44,8 @@ struct PostListView: View {
     @StateObject private var vm = PostListViewModel()
     @State private var selectedMaemuri: String = "전체"
     @State private var scrollPosition = ScrollPosition(idType: String.self)
+    @State private var searchText = ""
+    @State private var activeKeyword: String? = nil
 
     private var maemurList: [String] {
         guard !board.maemuri.isEmpty else { return [] }
@@ -49,7 +53,7 @@ struct PostListView: View {
     }
 
     private var activeMaemuri: String? {
-        selectedMaemuri == "전체" ? nil : selectedMaemuri
+        activeKeyword != nil ? nil : (selectedMaemuri == "전체" ? nil : selectedMaemuri)
     }
 
     var body: some View {
@@ -69,7 +73,7 @@ struct PostListView: View {
                     .id(post.id)
                     .onAppear {
                         if post.id == vm.posts.last?.id {
-                            Task { await vm.load(boardId: board.id, maemuri: activeMaemuri) }
+                            Task { await vm.load(boardId: board.id, maemuri: activeMaemuri, keyword: activeKeyword) }
                         }
                     }
                 }
@@ -128,15 +132,30 @@ struct PostListView: View {
         .navigationDestination(for: Post.self) { post in
             PostDetailView(boardId: post.boardId, postId: post.id)
         }
+        .searchable(text: $searchText, prompt: "제목 검색")
+        .onSubmit(of: .search) {
+            let kw = searchText.trimmingCharacters(in: .whitespaces)
+            activeKeyword = kw.isEmpty ? nil : kw
+            scrollPosition = ScrollPosition(idType: String.self)
+            Task { await vm.load(boardId: board.id, keyword: activeKeyword, reset: true) }
+        }
+        .onChange(of: searchText) { _, new in
+            if new.isEmpty {
+                activeKeyword = nil
+                scrollPosition = ScrollPosition(idType: String.self)
+                Task { await vm.load(boardId: board.id, maemuri: selectedMaemuri == "전체" ? nil : selectedMaemuri, reset: true) }
+            }
+        }
         .task(id: board.id) {
             selectedMaemuri = "전체"
+            searchText = ""
+            activeKeyword = nil
             scrollPosition = ScrollPosition(idType: String.self)
             await vm.load(boardId: board.id, reset: true)
         }
         .refreshable {
-            let prevMaemuri = activeMaemuri
             scrollPosition = ScrollPosition(idType: String.self)
-            await vm.load(boardId: board.id, maemuri: prevMaemuri, reset: true)
+            await vm.load(boardId: board.id, maemuri: activeMaemuri, keyword: activeKeyword, reset: true)
         }
     }
 }

@@ -92,6 +92,14 @@ class MLBParkService {
         return try parsePostList(html: html, boardId: boardId)
     }
 
+    /// 제목 키워드 검색
+    func fetchPostsByKeyword(boardId: String, keyword: String, page: Int = 1) async throws -> [Post] {
+        let encoded = keyword.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? keyword
+        let urlStr = "\(base)/mp/b.php?b=\(boardId)&m=search&search_select=stt&search_input=\(encoded)&p=\(page)"
+        let html = try await fetch(urlStr)
+        return try parsePostList(html: html, boardId: boardId, isSearch: true)
+    }
+
     /// 말머리 필터 (서버사이드 검색 API 사용)
     func fetchPostsByMaemuri(boardId: String, maemuri: String, page: Int = 1) async throws -> [Post] {
         let encoded = maemuri.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? maemuri
