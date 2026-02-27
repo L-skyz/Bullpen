@@ -57,39 +57,37 @@ struct BestPostsView: View {
     @StateObject private var vm = BestPostsViewModel()
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if vm.isLoading && vm.sections.allSatisfy({ $0.posts.isEmpty }) {
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 0, pinnedViews: .sectionHeaders) {
-                            Section {
-                                ForEach(vm.sections) { section in
-                                    BestBoardSection(section: section)
-                                }
-                            } header: {
-                                Picker("", selection: $vm.selectedType) {
-                                    ForEach(BestPostsViewModel.BestType.allCases) { t in
-                                        Text(t.rawValue).tag(t)
-                                    }
-                                }
-                                .pickerStyle(.segmented)
-                                .padding(.horizontal, 16).padding(.vertical, 8)
-                                .background(Color(.systemBackground))
+        Group {
+            if vm.isLoading && vm.sections.allSatisfy({ $0.posts.isEmpty }) {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0, pinnedViews: .sectionHeaders) {
+                        Section {
+                            ForEach(vm.sections) { section in
+                                BestBoardSection(section: section)
                             }
+                        } header: {
+                            Picker("", selection: $vm.selectedType) {
+                                ForEach(BestPostsViewModel.BestType.allCases) { t in
+                                    Text(t.rawValue).tag(t)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .padding(.horizontal, 16).padding(.vertical, 8)
+                            .background(Color(.systemBackground))
                         }
                     }
-                    .refreshable {
-                        await vm.load(type: vm.selectedType)
-                    }
+                }
+                .refreshable {
+                    await vm.load(type: vm.selectedType)
                 }
             }
-            .navigationTitle("베스트")
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(for: Post.self) { post in
-                PostDetailView(boardId: post.boardId, postId: post.id)
-            }
+        }
+        .navigationTitle("베스트")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(for: Post.self) { post in
+            PostDetailView(boardId: post.boardId, postId: post.id)
         }
         .task { await vm.load(type: vm.selectedType) }
         .onChange(of: vm.selectedType) { _, newType in

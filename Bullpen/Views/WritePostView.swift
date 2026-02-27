@@ -14,7 +14,7 @@ struct WritePostView: View {
     let maemuriOptions = ["없음", "잡담", "정보", "분석", "질문", "사진", "동영상", "뉴스"]
 
     var body: some View {
-        NavigationStack {
+        Group {
             if !auth.isLoggedIn {
                 ContentUnavailableView {
                     Label("로그인 필요", systemImage: "lock.circle")
@@ -55,7 +55,6 @@ struct WritePostView: View {
                         }
                     }
                 }
-                .navigationTitle("글쓰기")
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("등록") { Task { await submit() } }
@@ -69,6 +68,8 @@ struct WritePostView: View {
                 }
             }
         }
+        .navigationTitle("글쓰기")
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     private func submit() async {

@@ -8,40 +8,39 @@ struct LoginView: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("아이디", text: $id)
-                        .textContentType(.username)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                    SecureField("비밀번호", text: $password)
-                        .textContentType(.password)
-                }
+        Form {
+            Section {
+                TextField("아이디", text: $id)
+                    .textContentType(.username)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                SecureField("비밀번호", text: $password)
+                    .textContentType(.password)
+            }
 
-                if let err = errorMessage {
-                    Section {
-                        Text(err).foregroundColor(.red).font(.caption)
-                    }
-                }
-
+            if let err = errorMessage {
                 Section {
-                    Button {
-                        Task { await login() }
-                    } label: {
-                        if isLoading {
-                            HStack { Spacer(); ProgressView(); Spacer() }
-                        } else {
-                            Text("로그인")
-                                .frame(maxWidth: .infinity)
-                                .fontWeight(.semibold)
-                        }
-                    }
-                    .disabled(id.isEmpty || password.isEmpty || isLoading)
+                    Text(err).foregroundColor(.red).font(.caption)
                 }
             }
-            .navigationTitle("로그인")
+
+            Section {
+                Button {
+                    Task { await login() }
+                } label: {
+                    if isLoading {
+                        HStack { Spacer(); ProgressView(); Spacer() }
+                    } else {
+                        Text("로그인")
+                            .frame(maxWidth: .infinity)
+                            .fontWeight(.semibold)
+                    }
+                }
+                .disabled(id.isEmpty || password.isEmpty || isLoading)
+            }
         }
+        .navigationTitle("로그인")
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     private func login() async {
