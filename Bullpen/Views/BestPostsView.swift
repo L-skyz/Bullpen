@@ -64,7 +64,6 @@ struct BestPostsView: View {
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 0, pinnedViews: .sectionHeaders) {
-                            // 타입 피커 고정
                             Section {
                                 ForEach(vm.sections) { section in
                                     BestBoardSection(section: section)

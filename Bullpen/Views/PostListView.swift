@@ -9,22 +9,25 @@ class PostListViewModel: ObservableObject {
     private var page = 1
 
     func load(boardId: String, maemuri: String? = nil, reset: Bool = false) async {
-        if reset { page = 1; posts = []; hasMore = true }
+        let startPage = reset ? 1 : page
+        if reset { hasMore = true }
         guard hasMore else { return }
         isLoading = true
         error = nil
         do {
             let newPosts: [Post]
             if let m = maemuri, !m.isEmpty {
-                newPosts = try await MLBParkService.shared.fetchPostsByMaemuri(boardId: boardId, maemuri: m, page: page)
+                newPosts = try await MLBParkService.shared.fetchPostsByMaemuri(boardId: boardId, maemuri: m, page: startPage)
             } else {
-                newPosts = try await MLBParkService.shared.fetchPosts(boardId: boardId, page: page)
+                newPosts = try await MLBParkService.shared.fetchPosts(boardId: boardId, page: startPage)
             }
+            // 성공 후에만 posts 초기화 → pull-to-refresh 백지 방지
+            if reset { posts = [] }
+            page = startPage + 1
             if newPosts.isEmpty { hasMore = false }
             posts.append(contentsOf: newPosts)
-            page += 1
         } catch is CancellationError {
-            // 취소는 정상 (refreshable/task 전환 시) — 에러 표시 안 함
+            // 취소는 정상 (refreshable/task 전환 시)
         } catch let urlError as URLError where urlError.code == .cancelled {
             // URLSession 취소도 정상
         } catch {
@@ -41,7 +44,6 @@ struct PostListView: View {
     @State private var selectedMaemuri: String = "전체"
     @State private var scrollPosition = ScrollPosition(idType: String.self)
 
-    // 게시판 고정 말머리 목록 ("전체" 포함)
     private var maemurList: [String] {
         guard !board.maemuri.isEmpty else { return [] }
         return ["전체"] + board.maemuri
@@ -64,7 +66,7 @@ struct PostListView: View {
                             }
                             .buttonStyle(.plain)
 
-                            Divider().padding(.leading, 64)
+                            Divider().padding(.leading, 44)
                         }
                         .id(post.id)
                         .onAppear {
@@ -87,7 +89,6 @@ struct PostListView: View {
             .scrollPosition($scrollPosition)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // 좌측: 게시판 드로어 토글 버튼
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
                         withAnimation(.easeInOut(duration: 0.25)) { showBoardDrawer = true }
@@ -96,7 +97,6 @@ struct PostListView: View {
                     }
                 }
 
-                // 중앙: 게시판 제목 + 말머리 필터 드롭다운
                 ToolbarItem(placement: .principal) {
                     if !maemurList.isEmpty {
                         Menu {
@@ -149,13 +149,11 @@ struct PostListView: View {
                 await vm.load(boardId: board.id, maemuri: prevMaemuri, reset: true)
             }
 
-            // 왼쪽에서 슬라이드되는 게시판 드로어
             if showBoardDrawer {
                 BoardDrawer(selectedBoard: $board, isShowing: $showBoardDrawer)
                     .transition(.move(edge: .leading))
             }
         }
-        // 오른쪽 스와이프 → 드로어 열기, 왼쪽 스와이프 → 닫기
         .gesture(
             DragGesture(minimumDistance: 40, coordinateSpace: .local)
                 .onEnded { v in
@@ -178,7 +176,6 @@ struct PostRowView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
-            // 손톱 크기 아바타
             ZStack {
                 Circle()
                     .fill(avatarColor(for: post.author))
@@ -189,7 +186,6 @@ struct PostRowView: View {
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                // 제목 한 줄 자르기
                 HStack(alignment: .center, spacing: 4) {
                     if !post.maemuri.isEmpty {
                         Text(post.maemuri)
@@ -229,7 +225,7 @@ struct PostRowView: View {
     }
 }
 
-// MARK: - Board Drawer (왼쪽에서 슬라이드)
+// MARK: - Board Drawer (게시판 전환 전용)
 
 struct BoardDrawer: View {
     @Binding var selectedBoard: Board
@@ -237,14 +233,12 @@ struct BoardDrawer: View {
 
     var body: some View {
         ZStack(alignment: .leading) {
-            // 배경 딤 - 탭하면 닫기
             Color.black.opacity(0.35)
                 .ignoresSafeArea()
                 .onTapGesture {
                     withAnimation(.easeInOut(duration: 0.25)) { isShowing = false }
                 }
 
-            // 왼쪽 패널
             VStack(alignment: .leading, spacing: 0) {
                 Text("게시판")
                     .font(.title3).fontWeight(.bold)

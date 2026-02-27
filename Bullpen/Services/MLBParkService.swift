@@ -46,8 +46,10 @@ class MLBParkService {
     private func warmupIfNeeded() async {
         guard !warmedUp else { return }
         warmedUp = true
-        guard let url = URL(string: "https://gather.donga.com/?cookie") else { return }
-        _ = try? await session.data(for: URLRequest(url: url))
+        guard let url = URL(string: "https://gather.donga.com/?cookie=1") else { return }
+        var req = URLRequest(url: url)
+        req.setValue("https://mlbpark.donga.com/", forHTTPHeaderField: "Referer")
+        _ = try? await session.data(for: req)
     }
 
     // MARK: - 공통 요청
