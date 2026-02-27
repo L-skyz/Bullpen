@@ -51,7 +51,7 @@ jobs:
 
       # 1. 고정된 다운로드 링크를 위해 GitHub Release에 업로드
       - name: Release 업로드
-        uses: softprops/action-gh-release@v4
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           files: build/ipa/Bullpen.ipa
