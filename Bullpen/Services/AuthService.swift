@@ -22,17 +22,22 @@ class AuthService: ObservableObject {
     // MARK: - 로그인
 
     func login(id: String, password: String) async throws {
-        // 로그인 페이지에서 hidden 필드 확인
-        guard let loginURL = URL(string: "\(base)/mp/login.php") else { return }
+        // 실제 로그인 엔드포인트: secure.donga.com (mlbpark.donga.com 아님)
+        guard let loginURL = URL(string: "https://secure.donga.com/mlbpark/login.php") else { return }
 
         var req = URLRequest(url: loginURL)
         req.httpMethod = "POST"
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
-        req.setValue("\(base)/mp/login.php", forHTTPHeaderField: "Referer")
+        req.setValue("https://secure.donga.com/mlbpark/login.php", forHTTPHeaderField: "Referer")
 
-        // 실제 필드명은 개발자도구 Network탭 확인 후 수정
-        let params = ["userId": id, "userPw": password, "autoLogin": "Y"]
+        // 실제 폼 필드: bid=아이디, bpw=비밀번호, gourl=리다이렉트URL
+        let params: [String: String] = [
+            "bid":   id,
+            "bpw":   password,
+            "gourl": "https://mlbpark.donga.com/mp",
+            "mlbuser": "1"
+        ]
         req.httpBody = params.urlEncoded.data(using: .utf8)
 
         let (data, resp) = try await session.data(for: req)
@@ -41,8 +46,15 @@ class AuthService: ObservableObject {
             throw MLBParkError.networkError("로그인 실패 (\(http.statusCode))")
         }
 
+        // 리다이렉트 후 최종 URL이 secure.donga.com이면 로그인 실패
+        if let finalHost = (resp as? HTTPURLResponse)?.url?.host,
+           finalHost.contains("secure.donga.com") {
+            throw MLBParkError.networkError("아이디 또는 비밀번호가 올바르지 않습니다.")
+        }
+
+        // HTML에 명시적 오류 메시지가 있으면 실패
         let html = String(data: data, encoding: .utf8) ?? ""
-        if html.contains("비밀번호") && html.contains("아이디") {
+        if html.contains("비밀번호를 잘못") || html.contains("아이디가 없") || html.contains("로그인 오류") {
             throw MLBParkError.networkError("아이디 또는 비밀번호가 올바르지 않습니다.")
         }
 
