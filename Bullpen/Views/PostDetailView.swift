@@ -144,6 +144,7 @@ struct PostDetailView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
+        .background(SwipeBackEnabler())
         .task { await vm.load(boardId: boardId, postId: postId) }
     }
 
@@ -152,6 +153,20 @@ struct PostDetailView: View {
         let hash = name.unicodeScalars.reduce(0) { $0 + Int($1.value) }
         return palette[abs(hash) % palette.count]
     }
+}
+
+// MARK: - 뒤로가기 버튼 숨김 + 스와이프백 유지
+
+private struct SwipeBackEnabler: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> UIViewController {
+        let vc = UIViewController()
+        DispatchQueue.main.async {
+            vc.navigationController?.interactivePopGestureRecognizer?.isEnabled = true
+            vc.navigationController?.interactivePopGestureRecognizer?.delegate = nil
+        }
+        return vc
+    }
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
 }
 
 // MARK: - HTML 본문 렌더링 (WKWebView)
