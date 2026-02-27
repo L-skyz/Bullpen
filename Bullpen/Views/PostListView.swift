@@ -29,18 +29,33 @@ struct PostListView: View {
     @Binding var board: Board
     @StateObject private var vm = PostListViewModel()
     @State private var showBoardDrawer = false
+    @State private var selectedMaemuri: String = "전체"
+
+    // 로드된 게시글에서 고유 말머리 추출
+    private var uniqueMaemuris: [String] {
+        let found = vm.posts.compactMap { $0.maemuri.isEmpty ? nil : $0.maemuri }
+        let unique = Array(Set(found)).sorted()
+        return ["전체"] + unique
+    }
+
+    // 말머리 필터 적용된 게시글
+    private var filteredPosts: [Post] {
+        guard selectedMaemuri != "전체" else { return vm.posts }
+        return vm.posts.filter { $0.maemuri == selectedMaemuri }
+    }
 
     var body: some View {
         ZStack {
             List {
-                ForEach(vm.posts) { post in
+                ForEach(filteredPosts) { post in
                     NavigationLink(value: post) {
                         PostRowView(post: post)
                     }
                     .listRowSeparator(.visible)
                     .listRowInsets(.init(top: 8, leading: 12, bottom: 8, trailing: 12))
                     .onAppear {
-                        if post.id == vm.posts.last?.id {
+                        // 필터 없을 때만 무한스크롤
+                        if selectedMaemuri == "전체", post.id == vm.posts.last?.id {
                             Task { await vm.load(boardId: board.id) }
                         }
                     }
@@ -56,33 +71,78 @@ struct PostListView: View {
                 }
             }
             .listStyle(.plain)
-            .navigationTitle(board.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                // 좌측: 게시판 드로어 토글 버튼
+                ToolbarItem(placement: .navigationBarLeading) {
                     Button {
                         withAnimation(.easeInOut(duration: 0.25)) { showBoardDrawer = true }
                     } label: {
                         Image(systemName: "list.bullet.rectangle")
                     }
                 }
+
+                // 중앙: 게시판 제목 + 말머리 필터 드롭다운
+                ToolbarItem(placement: .principal) {
+                    if uniqueMaemuris.count > 1 {
+                        Menu {
+                            ForEach(uniqueMaemuris, id: \.self) { m in
+                                Button {
+                                    selectedMaemuri = m
+                                } label: {
+                                    if m == selectedMaemuri {
+                                        Label(m, systemImage: "checkmark")
+                                    } else {
+                                        Text(m)
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(selectedMaemuri == "전체"
+                                     ? board.name
+                                     : "\(board.name) · \(selectedMaemuri)")
+                                    .font(.headline).fontWeight(.semibold)
+                                    .foregroundColor(.primary)
+                                Image(systemName: "chevron.down")
+                                    .font(.caption2).fontWeight(.semibold)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    } else {
+                        Text(board.name)
+                            .font(.headline).fontWeight(.semibold)
+                    }
+                }
             }
             .navigationDestination(for: Post.self) { post in
                 PostDetailView(boardId: post.boardId, postId: post.id)
             }
-            .task(id: board.id) { await vm.load(boardId: board.id, reset: true) }
-            .refreshable { await vm.load(boardId: board.id, reset: true) }
+            .task(id: board.id) {
+                selectedMaemuri = "전체"
+                await vm.load(boardId: board.id, reset: true)
+            }
+            .refreshable {
+                selectedMaemuri = "전체"
+                await vm.load(boardId: board.id, reset: true)
+            }
 
+            // 왼쪽에서 슬라이드되는 게시판 드로어
             if showBoardDrawer {
                 BoardDrawer(selectedBoard: $board, isShowing: $showBoardDrawer)
-                    .transition(.opacity)
+                    .transition(.move(edge: .leading))
             }
         }
+        // 오른쪽 스와이프 → 드로어 열기, 왼쪽 스와이프 → 닫기
         .gesture(
             DragGesture(minimumDistance: 40, coordinateSpace: .local)
                 .onEnded { v in
-                    if v.translation.width < -60 && abs(v.translation.height) < 80 {
+                    let dx = v.translation.width
+                    let dy = abs(v.translation.height)
+                    if dx > 60 && dy < 80 {
                         withAnimation(.easeInOut(duration: 0.25)) { showBoardDrawer = true }
+                    } else if dx < -60 && dy < 80 {
+                        withAnimation(.easeInOut(duration: 0.25)) { showBoardDrawer = false }
                     }
                 }
         )
@@ -143,20 +203,22 @@ struct PostRowView: View {
     }
 }
 
-// MARK: - Board Drawer
+// MARK: - Board Drawer (왼쪽에서 슬라이드)
 
 struct BoardDrawer: View {
     @Binding var selectedBoard: Board
     @Binding var isShowing: Bool
 
     var body: some View {
-        ZStack(alignment: .trailing) {
+        ZStack(alignment: .leading) {
+            // 배경 딤 - 탭하면 닫기
             Color.black.opacity(0.35)
                 .ignoresSafeArea()
                 .onTapGesture {
                     withAnimation(.easeInOut(duration: 0.25)) { isShowing = false }
                 }
 
+            // 왼쪽 패널
             VStack(alignment: .leading, spacing: 0) {
                 Text("게시판")
                     .font(.title3).fontWeight(.bold)
