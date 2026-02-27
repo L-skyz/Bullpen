@@ -22,7 +22,7 @@ class AuthService: ObservableObject {
     // MARK: - 로그인
 
     func login(id: String, password: String) async throws {
-        // 실제 로그인 엔드포인트: secure.donga.com (mlbpark.donga.com 아님)
+        // 실제 로그인 엔드포인트: secure.donga.com
         guard let loginURL = URL(string: "https://secure.donga.com/mlbpark/login.php") else { return }
 
         var req = URLRequest(url: loginURL)
@@ -31,30 +31,32 @@ class AuthService: ObservableObject {
         req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
         req.setValue("https://secure.donga.com/mlbpark/login.php", forHTTPHeaderField: "Referer")
 
-        // 실제 폼 필드: bid=아이디, bpw=비밀번호, gourl=리다이렉트URL
+        // 실제 폼 필드: bid=아이디, bpw=비밀번호
         let params: [String: String] = [
-            "bid":   id,
-            "bpw":   password,
-            "gourl": "https://mlbpark.donga.com/mp",
+            "bid":     id,
+            "bpw":     password,
+            "gourl":   "https://mlbpark.donga.com/mp",
             "mlbuser": "1"
         ]
         req.httpBody = params.urlEncoded.data(using: .utf8)
 
-        let (data, resp) = try await session.data(for: req)
+        let (_, resp) = try await session.data(for: req)
 
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("로그인 실패 (\(http.statusCode))")
         }
 
-        // 리다이렉트 후 최종 URL이 secure.donga.com이면 로그인 실패
-        if let finalHost = (resp as? HTTPURLResponse)?.url?.host,
-           finalHost.contains("secure.donga.com") {
-            throw MLBParkError.networkError("아이디 또는 비밀번호가 올바르지 않습니다.")
+        // 성공 여부 = .donga.com 도메인에 인증 쿠키가 실제로 세팅됐는지로 판단
+        // (실패 시 서버가 모든 쿠키를 deleted로 초기화함)
+        let authCookieNames = ["dongauserid", "dusr", "mlbuser", "login_id"]
+        let allCookies = HTTPCookieStorage.shared.cookies ?? []
+        let loggedIn = allCookies.contains { cookie in
+            cookie.domain.contains("donga.com") &&
+            authCookieNames.contains(cookie.name) &&
+            !cookie.value.isEmpty && cookie.value != "deleted"
         }
 
-        // HTML에 명시적 오류 메시지가 있으면 실패
-        let html = String(data: data, encoding: .utf8) ?? ""
-        if html.contains("비밀번호를 잘못") || html.contains("아이디가 없") || html.contains("로그인 오류") {
+        guard loggedIn else {
             throw MLBParkError.networkError("아이디 또는 비밀번호가 올바르지 않습니다.")
         }
 
@@ -95,8 +97,13 @@ class AuthService: ObservableObject {
     // MARK: - 저장된 세션 확인
 
     private func checkLoginStatus() {
-        let cookies = HTTPCookieStorage.shared.cookies(for: URL(string: base)!) ?? []
-        isLoggedIn = cookies.contains { ["PHPSESSID", "member_id", "login_id"].contains($0.name) }
+        let authCookieNames = ["dongauserid", "dusr", "mlbuser", "login_id"]
+        let allCookies = HTTPCookieStorage.shared.cookies ?? []
+        isLoggedIn = allCookies.contains { cookie in
+            cookie.domain.contains("donga.com") &&
+            authCookieNames.contains(cookie.name) &&
+            !cookie.value.isEmpty && cookie.value != "deleted"
+        }
     }
 }
 
