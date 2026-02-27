@@ -27,10 +27,10 @@ class MLBParkService {
     private let session: URLSession
     private var warmedUp = false
 
-    // EUC-KR 인코딩 (구형 한국 사이트 폴백)
-    private static let eucKR: String.Encoding = {
-        let cfEnc = CFStringConvertEncodingToNSStringEncoding(
-            CFStringEncoding(CFStringEncodings.EUC_KR.rawValue))
+    // CP949 (Unified Hangul Code) = 0x0422: EUC-KR의 Windows 확장판 (실제 한국 사이트 대부분 사용)
+    // 주의: 표준 EUC-KR(0x0940)이 아닌 CP949(0x0422)를 써야 완성형 한글 전체 커버
+    private static let cp949: String.Encoding = {
+        let cfEnc = CFStringConvertEncodingToNSStringEncoding(0x0422)
         return String.Encoding(rawValue: cfEnc)
     }()
 
@@ -59,14 +59,28 @@ class MLBParkService {
         req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
         req.setValue(base, forHTTPHeaderField: "Referer")
         req.setValue("ko-KR,ko;q=0.9", forHTTPHeaderField: "Accept-Language")
-        let (data, _) = try await session.data(for: req)
-        // UTF-8 → EUC-KR → ISO-Latin-1 순서로 시도 (mlbpark은 가끔 EUC-KR 반환)
-        guard let html = String(data: data, encoding: .utf8)
-                      ?? String(data: data, encoding: Self.eucKR)
-                      ?? String(data: data, encoding: .isoLatin1) else {
-            throw MLBParkError.encodingError
+        let (data, response) = try await session.data(for: req)
+
+        // 1) HTTP Content-Type 헤더에서 charset 추출 (가장 신뢰성 높음)
+        let charset = (response as? HTTPURLResponse)?
+            .value(forHTTPHeaderField: "Content-Type")?
+            .components(separatedBy: "charset=").last?
+            .lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let html: String?
+        switch charset {
+        case "euc-kr", "x-windows-949", "ks_c_5601-1987", "cp949":
+            // 한국어 레거시 인코딩 → CP949(0x0422)로 디코딩
+            html = String(data: data, encoding: Self.cp949)
+        default:
+            // UTF-8 우선, 실패 시 CP949, 최후 Latin-1
+            html = String(data: data, encoding: .utf8)
+                ?? String(data: data, encoding: Self.cp949)
+                ?? String(data: data, encoding: .isoLatin1)
         }
-        return html
+
+        guard let result = html else { throw MLBParkError.encodingError }
+        return result
     }
 
     // MARK: - 게시글 목록

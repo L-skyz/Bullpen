@@ -257,7 +257,6 @@ struct BoardDrawer: View {
             }
             .frame(width: min(UIScreen.main.bounds.width * 0.72, 300))
             .background(Color(.systemBackground))
-            .ignoresSafeArea(edges: .vertical)
         }
     }
 }
