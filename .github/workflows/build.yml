@@ -1,4 +1,4 @@
-name: Build Bullpen IPA
+Name: Build Bullpen IPA
 
 on:
   push:
@@ -9,6 +9,10 @@ on:
 jobs:
   build:
     runs-on: macos-15
+    # 빌드 결과물을 Release에 올리려면 쓰기 권한이 필요합니다
+    permissions:
+      contents: write
+
     steps:
       - name: 코드 체크아웃
         uses: actions/checkout@v4
@@ -42,13 +46,36 @@ jobs:
           mkdir -p build/ipa Payload
           cp -r "$APP_PATH" Payload/
           chmod -R 755 "Payload/$APP_NAME"
-          zip -r "build/ipa/${APP_NAME%.app}.ipa" Payload
+          # Krava 연동을 위해 파일명을 Bullpen.ipa로 고정합니다
+          zip -r "build/ipa/Bullpen.ipa" Payload
 
-      - name: IPA 업로드
-        uses: actions/upload-artifact@v4
+      # 1. 고정된 다운로드 링크를 위해 GitHub Release에 업로드
+      - name: Release 업로드
+        uses: softprops/action-gh-release@v2
         with:
-          name: Bullpen-ipa
-          path: build/ipa/*.ipa
+          tag_name: latest
+          files: build/ipa/Bullpen.ipa
+          overwrite: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 2. 텔레그램으로 설치 링크 쏘기
+      - name: 텔레그램 알림 발송
+        run: |
+          # 고정된 IPA 직링크
+          IPA_URL="https://github.com/${{ github.repository }}/releases/download/latest/Bullpen.ipa"
+          
+          # Krava 연동 스킴 (Krava 앱에서 사용하는 형식)
+          # 만약 Krava에서 인식을 못하면 esign:// 또는 feather:// 로 바꿔보세요
+          INSTALL_URL="krava://import?url=$IPA_URL"
+          
+          # 메시지 구성
+          MESSAGE="🚀 **불펜 빌드 완료!**%0A%0A아래 링크를 눌러 Krava로 즉시 설치하세요.%0A%0A[👉 앱 설치하기]($INSTALL_URL)"
+          
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d "text=$MESSAGE" \
+            -d "parse_mode=Markdown"
 
       - name: 다운로드 링크 summary 출력
         run: |
