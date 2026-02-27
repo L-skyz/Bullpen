@@ -8,13 +8,18 @@ class PostListViewModel: ObservableObject {
     @Published var hasMore = true
     private var page = 1
 
-    func load(boardId: String, reset: Bool = false) async {
+    func load(boardId: String, maemuri: String? = nil, reset: Bool = false) async {
         if reset { page = 1; posts = []; hasMore = true }
         guard hasMore else { return }
         isLoading = true
         error = nil
         do {
-            let newPosts = try await MLBParkService.shared.fetchPosts(boardId: boardId, page: page)
+            let newPosts: [Post]
+            if let m = maemuri, !m.isEmpty {
+                newPosts = try await MLBParkService.shared.fetchPostsByMaemuri(boardId: boardId, maemuri: m, page: page)
+            } else {
+                newPosts = try await MLBParkService.shared.fetchPosts(boardId: boardId, page: page)
+            }
             if newPosts.isEmpty { hasMore = false }
             posts.append(contentsOf: newPosts)
             page += 1
@@ -31,32 +36,28 @@ struct PostListView: View {
     @State private var showBoardDrawer = false
     @State private var selectedMaemuri: String = "전체"
 
-    // 로드된 게시글에서 고유 말머리 추출
-    private var uniqueMaemuris: [String] {
-        let found = vm.posts.compactMap { $0.maemuri.isEmpty ? nil : $0.maemuri }
-        let unique = Array(Set(found)).sorted()
-        return ["전체"] + unique
+    // 게시판 고정 말머리 목록 ("전체" 포함)
+    private var maemurList: [String] {
+        guard !board.maemuri.isEmpty else { return [] }
+        return ["전체"] + board.maemuri
     }
 
-    // 말머리 필터 적용된 게시글
-    private var filteredPosts: [Post] {
-        guard selectedMaemuri != "전체" else { return vm.posts }
-        return vm.posts.filter { $0.maemuri == selectedMaemuri }
+    private var activeMaemuri: String? {
+        selectedMaemuri == "전체" ? nil : selectedMaemuri
     }
 
     var body: some View {
         ZStack {
             List {
-                ForEach(filteredPosts) { post in
+                ForEach(vm.posts) { post in
                     NavigationLink(value: post) {
                         PostRowView(post: post)
                     }
                     .listRowSeparator(.visible)
                     .listRowInsets(.init(top: 8, leading: 12, bottom: 8, trailing: 12))
                     .onAppear {
-                        // 필터 없을 때만 무한스크롤
-                        if selectedMaemuri == "전체", post.id == vm.posts.last?.id {
-                            Task { await vm.load(boardId: board.id) }
+                        if post.id == vm.posts.last?.id {
+                            Task { await vm.load(boardId: board.id, maemuri: activeMaemuri) }
                         }
                     }
                 }
@@ -84,11 +85,16 @@ struct PostListView: View {
 
                 // 중앙: 게시판 제목 + 말머리 필터 드롭다운
                 ToolbarItem(placement: .principal) {
-                    if uniqueMaemuris.count > 1 {
+                    if !maemurList.isEmpty {
                         Menu {
-                            ForEach(uniqueMaemuris, id: \.self) { m in
+                            ForEach(maemurList, id: \.self) { m in
                                 Button {
-                                    selectedMaemuri = m
+                                    if m != selectedMaemuri {
+                                        selectedMaemuri = m
+                                        Task {
+                                            await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true)
+                                        }
+                                    }
                                 } label: {
                                     if m == selectedMaemuri {
                                         Label(m, systemImage: "checkmark")
@@ -124,7 +130,7 @@ struct PostListView: View {
             }
             .refreshable {
                 selectedMaemuri = "전체"
-                await vm.load(boardId: board.id, reset: true)
+                await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true)
             }
 
             // 왼쪽에서 슬라이드되는 게시판 드로어

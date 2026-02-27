@@ -27,6 +27,13 @@ class MLBParkService {
     private let session: URLSession
     private var warmedUp = false
 
+    // EUC-KR 인코딩 (구형 한국 사이트 폴백)
+    private static let eucKR: String.Encoding = {
+        let cfEnc = CFStringConvertEncodingToNSStringEncoding(
+            CFStringEncoding(CFStringEncodings.EUC_KR.rawValue))
+        return String.Encoding(rawValue: cfEnc)
+    }()
+
     private init() {
         let config = URLSessionConfiguration.default
         config.httpCookieStorage = HTTPCookieStorage.shared
@@ -53,7 +60,10 @@ class MLBParkService {
         req.setValue(base, forHTTPHeaderField: "Referer")
         req.setValue("ko-KR,ko;q=0.9", forHTTPHeaderField: "Accept-Language")
         let (data, _) = try await session.data(for: req)
-        guard let html = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else {
+        // UTF-8 → EUC-KR → ISO-Latin-1 순서로 시도 (mlbpark은 가끔 EUC-KR 반환)
+        guard let html = String(data: data, encoding: .utf8)
+                      ?? String(data: data, encoding: Self.eucKR)
+                      ?? String(data: data, encoding: .isoLatin1) else {
             throw MLBParkError.encodingError
         }
         return html
@@ -66,19 +76,34 @@ class MLBParkService {
         return try parsePostList(html: html, boardId: boardId)
     }
 
-    private func parsePostList(html: String, boardId: String) throws -> [Post] {
+    /// 말머리 필터 (서버사이드 검색 API 사용)
+    func fetchPostsByMaemuri(boardId: String, maemuri: String, page: Int = 1) async throws -> [Post] {
+        let encoded = maemuri.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? maemuri
+        let urlStr = "\(base)/mp/b.php?search_select=sct&search_input=&select=spf&m=search&b=\(boardId)&query=\(encoded)&p=\(page)"
+        let html = try await fetch(urlStr)
+        return try parsePostList(html: html, boardId: boardId, isSearch: true)
+    }
+
+    private func parsePostList(html: String, boardId: String, isSearch: Bool = false) throws -> [Post] {
         let doc = try SwiftSoup.parse(html)
         var posts: [Post] = []
 
-        // table tr 구조: td[0]=번호, td[1]=말머리+제목, td[2]=작성자, td[3]=날짜, td[4]=조회수
+        // 일반목록: td[0]=번호(숫자 5자리↑), td[1]=말머리+제목, td[2]=작성자, td[3]=날짜, td[4]=조회수
+        // 검색결과: td[0]=게시판명(문자열),   td[1]=말머리+제목, td[2]=작성자, td[3]=날짜, td[4]=조회수
         let rows = try doc.select("table tr")
         for row in rows {
             let tds = try row.select("td")
             guard tds.size() >= 4 else { continue }
 
-            // 첫번째 td가 숫자(글번호)인 행만 처리 (공지 제외)
-            let numText = try tds.get(0).text().trimmingCharacters(in: .whitespaces)
-            guard numText.allSatisfy({ $0.isNumber }), numText.count >= 5 else { continue }
+            let firstTd = try tds.get(0).text().trimmingCharacters(in: .whitespaces)
+
+            if isSearch {
+                // 헤더 행("게시판") 및 빈 행 제외
+                guard !firstTd.isEmpty, firstTd != "게시판" else { continue }
+            } else {
+                // 글번호가 숫자 5자리 이상인 행만 (공지·헤더 제외)
+                guard firstTd.allSatisfy({ $0.isNumber }), firstTd.count >= 5 else { continue }
+            }
 
             let titleTd = tds.get(1)
 
