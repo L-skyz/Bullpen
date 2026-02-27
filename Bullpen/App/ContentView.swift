@@ -112,6 +112,9 @@ struct AppDrawer: View {
         ZStack(alignment: .leading) {
             Color.black.opacity(0.35)
                 .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(drawerSpring) { isShowing = false }
+                }
                 .gesture(
                     DragGesture()
                         .onEnded { v in

@@ -40,7 +40,6 @@ struct Board: Identifiable, Hashable, Codable {
             "음식", "역사", "과학", "군사", "자동차", "IT", "아이돌", "방송/연예",
             "코/주/부", "고민상담", "결혼/연애", "정치", "주번나/17금/19금", "핫딜",
         ]),
-        Board(id: "phone",      name: "스마트폰"),
         Board(id: "suggestion", name: "건의/제안"),
     ]
 }
