@@ -16,7 +16,7 @@ struct BoardsView: View {
             }
             .navigationTitle("불펜")
             .navigationDestination(for: Board.self) { board in
-                PostListView(board: board)
+                PostListView(board: .constant(board))
             }
             .navigationDestination(for: Post.self) { post in
                 PostDetailView(boardId: post.boardId, postId: post.id)
