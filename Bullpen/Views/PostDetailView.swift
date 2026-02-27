@@ -46,12 +46,12 @@ struct PostDetailView: View {
             } else if let d = vm.detail {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
+
                         // ── 헤더 ──
                         VStack(alignment: .leading, spacing: 8) {
                             if !d.maemuri.isEmpty {
                                 Text(d.maemuri)
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
+                                    .font(.caption).fontWeight(.semibold)
                                     .padding(.horizontal, 7).padding(.vertical, 3)
                                     .background(Color.blue.opacity(0.12))
                                     .foregroundColor(.blue)
@@ -60,14 +60,24 @@ struct PostDetailView: View {
                             Text(d.title)
                                 .font(.title3).fontWeight(.bold)
 
-                            HStack(spacing: 4) {
-                                Image(systemName: "person.circle")
-                                    .font(.caption).foregroundColor(.secondary)
-                                Text(d.author).font(.subheadline).foregroundColor(.secondary)
+                            HStack(spacing: 10) {
+                                ZStack {
+                                    Circle()
+                                        .fill(avatarColor(d.author))
+                                        .frame(width: 36, height: 36)
+                                    Text(String(d.author.prefix(1)))
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.white)
+                                }
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(d.author)
+                                        .font(.subheadline).fontWeight(.semibold)
+                                    Text(d.date)
+                                        .font(.caption).foregroundColor(.secondary)
+                                }
                                 Spacer()
-                                Text(d.date).font(.caption).foregroundColor(.secondary)
                             }
-                            Divider()
+
                             HStack(spacing: 16) {
                                 Label("\(d.recommendCount)", systemImage: "hand.thumbsup")
                                 Label("\(d.views)",           systemImage: "eye")
@@ -80,21 +90,26 @@ struct PostDetailView: View {
 
                         Divider()
 
-                        // ── 본문 ──
+                        // ── 본문 (WKWebView, div.ar_txt만) ──
                         HTMLContentView(html: d.contentHTML, height: $contentHeight)
                             .frame(height: contentHeight)
-                            .padding(.horizontal, 4)
 
-                        Divider().padding(.top, 8)
+                        Divider().padding(.top, 4)
 
                         // ── 댓글 목록 ──
                         if !d.comments.isEmpty {
                             VStack(alignment: .leading, spacing: 0) {
-                                Text("댓글 \(d.commentCount)개")
-                                    .font(.headline).padding()
+                                HStack {
+                                    Image(systemName: "bubble.left.and.bubble.right")
+                                        .foregroundColor(.secondary)
+                                    Text("댓글 \(d.commentCount)개")
+                                        .font(.headline)
+                                }
+                                .padding(.horizontal).padding(.top, 12).padding(.bottom, 4)
+
                                 ForEach(d.comments) { c in
                                     CommentRowView(comment: c)
-                                    Divider().padding(.leading)
+                                    Divider().padding(.leading, 58)
                                 }
                             }
                         }
@@ -105,7 +120,6 @@ struct PostDetailView: View {
                                 TextField("댓글을 입력하세요", text: $vm.commentInput)
                                     .textFieldStyle(.roundedBorder)
                                     .focused($commentFocused)
-
                                 Button {
                                     Task { await vm.submitComment(boardId: boardId, postId: postId) }
                                 } label: {
@@ -119,8 +133,9 @@ struct PostDetailView: View {
                                 .disabled(vm.commentInput.isEmpty || vm.isSubmittingComment)
                             }
                             .padding()
-                            .background(Color(.systemBackground))
                         }
+
+                        Spacer(minLength: 40)
                     }
                 }
             } else if let err = vm.error {
@@ -129,6 +144,12 @@ struct PostDetailView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .task { await vm.load(boardId: boardId, postId: postId) }
+    }
+
+    private func avatarColor(_ name: String) -> Color {
+        let palette: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .red]
+        let hash = name.unicodeScalars.reduce(0) { $0 + Int($1.value) }
+        return palette[abs(hash) % palette.count]
     }
 }
 
@@ -151,32 +172,53 @@ struct HTMLContentView: UIViewRepresentable {
     }
 
     func updateUIView(_ wv: WKWebView, context: Context) {
+        // 같은 HTML이면 재로딩 안함 → 영상 깜박거림 방지
+        guard context.coordinator.lastHTML != html else { return }
+        context.coordinator.lastHTML = html
+
         let dark = UITraitCollection.current.userInterfaceStyle == .dark
-        let fg = dark ? "#f0f0f0" : "#1a1a1a"
+        let fg   = dark ? "#f0f0f0" : "#1a1a1a"
+        let bg   = dark ? "#1c1c1e" : "#ffffff"
+
         let styled = """
         <html><head>
+        <meta charset='utf-8'>
         <meta name='viewport' content='width=device-width,initial-scale=1,shrink-to-fit=no'>
         <style>
-          body{font-family:-apple-system,Helvetica;font-size:16px;color:\(fg);
-               background:transparent;padding:8px;margin:0;word-break:break-word;line-height:1.7}
-          img{max-width:100%;height:auto;border-radius:8px;display:block;margin:10px auto}
-          a{color:#007AFF;text-decoration:none}
-          p{margin:6px 0}
-        </style></head><body>\(html)</body></html>
+          body { font-family: -apple-system, Helvetica, sans-serif;
+                 font-size: 16px; color: \(fg); background: \(bg);
+                 padding: 12px 8px; margin: 0;
+                 word-break: break-word; line-height: 1.75; }
+          img  { max-width: 100%; height: auto; display: block;
+                 margin: 10px auto; border-radius: 6px; }
+          video { max-width: 100%; border-radius: 6px; }
+          a    { color: #007AFF; text-decoration: none; }
+          p    { margin: 6px 0; }
+          iframe, .kakao_ad_unit, .kakao_ad_area,
+          [class*='adsbygoogle'], .powerlink, .ad_wrap,
+          .icon_ad, .tool_cont { display: none !important; }
+        </style></head>
+        <body>\(html)</body></html>
         """
         wv.loadHTMLString(styled, baseURL: URL(string: "https://mlbpark.donga.com"))
     }
 
     class Coordinator: NSObject, WKNavigationDelegate {
         let parent: HTMLContentView
+        var lastHTML: String = ""
         init(_ p: HTMLContentView) { parent = p }
 
         func webView(_ wv: WKWebView, didFinish _: WKNavigation!) {
             wv.evaluateJavaScript("document.body.scrollHeight") { result, _ in
                 if let h = result as? CGFloat {
-                    DispatchQueue.main.async { self.parent.height = h + 16 }
+                    DispatchQueue.main.async { self.parent.height = max(h + 20, 60) }
                 }
             }
+        }
+
+        func webView(_ wv: WKWebView, decidePolicyFor action: WKNavigationAction,
+                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            decisionHandler(action.navigationType == .linkActivated ? .cancel : .allow)
         }
     }
 }
@@ -187,36 +229,53 @@ struct CommentRowView: View {
     let comment: Comment
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Text(comment.author).font(.subheadline).fontWeight(.semibold)
-                if !comment.ip.isEmpty {
-                    Text(comment.ip).font(.caption2).foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 10) {
+                ZStack {
+                    Circle().fill(avatarColor(comment.author)).frame(width: 36, height: 36)
+                    Text(String(comment.author.prefix(1)))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
                 }
-                Spacer()
-                Text(comment.date).font(.caption2).foregroundColor(.secondary)
-            }
-            Text(comment.content).font(.subheadline)
-
-            // 대댓글
-            if !comment.replies.isEmpty {
-                ForEach(comment.replies) { reply in
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: "arrow.turn.down.right")
-                            .font(.caption2).foregroundColor(.secondary).padding(.top, 2)
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Text(reply.author).font(.caption).fontWeight(.semibold)
-                                Spacer()
-                                Text(reply.date).font(.caption2).foregroundColor(.secondary)
-                            }
-                            Text(reply.content).font(.caption)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(comment.author).font(.subheadline).fontWeight(.semibold)
+                        if !comment.ip.isEmpty {
+                            Text(comment.ip).font(.caption2).foregroundColor(.secondary)
                         }
+                        Spacer()
+                        Text(comment.date).font(.caption2).foregroundColor(.secondary)
                     }
-                    .padding(.top, 4)
+                    Text(comment.content)
+                        .font(.subheadline)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+            }
+            .padding(.horizontal).padding(.vertical, 10)
+
+            ForEach(comment.replies) { reply in
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "arrow.turn.down.right")
+                        .font(.caption).foregroundColor(.secondary)
+                        .frame(width: 36).padding(.top, 2)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text(reply.author).font(.caption).fontWeight(.semibold)
+                            Spacer()
+                            Text(reply.date).font(.caption2).foregroundColor(.secondary)
+                        }
+                        Text(reply.content).font(.caption)
+                    }
+                }
+                .padding(.horizontal).padding(.vertical, 6)
+                .background(Color(.secondarySystemBackground))
             }
         }
-        .padding(.horizontal).padding(.vertical, 10)
+    }
+
+    private func avatarColor(_ name: String) -> Color {
+        let palette: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .red]
+        let hash = name.unicodeScalars.reduce(0) { $0 + Int($1.value) }
+        return palette[abs(hash) % palette.count]
     }
 }

@@ -31,7 +31,7 @@ struct PostListView: View {
     @State private var showBoardDrawer = false
 
     var body: some View {
-        NavigationStack {
+        ZStack {
             List {
                 ForEach(vm.posts) { post in
                     NavigationLink(value: post) {
@@ -61,9 +61,7 @@ struct PostListView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            showBoardDrawer = true
-                        }
+                        withAnimation(.easeInOut(duration: 0.25)) { showBoardDrawer = true }
                     } label: {
                         Image(systemName: "list.bullet.rectangle")
                     }
@@ -74,23 +72,20 @@ struct PostListView: View {
             }
             .task(id: board.id) { await vm.load(boardId: board.id, reset: true) }
             .refreshable { await vm.load(boardId: board.id, reset: true) }
-        }
-        .gesture(
-            DragGesture(minimumDistance: 40, coordinateSpace: .local)
-                .onEnded { v in
-                    if v.translation.width < -60 && abs(v.translation.height) < 60 {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            showBoardDrawer = true
-                        }
-                    }
-                }
-        )
-        .overlay {
+
             if showBoardDrawer {
                 BoardDrawer(selectedBoard: $board, isShowing: $showBoardDrawer)
                     .transition(.opacity)
             }
         }
+        .gesture(
+            DragGesture(minimumDistance: 40, coordinateSpace: .local)
+                .onEnded { v in
+                    if v.translation.width < -60 && abs(v.translation.height) < 80 {
+                        withAnimation(.easeInOut(duration: 0.25)) { showBoardDrawer = true }
+                    }
+                }
+        )
     }
 }
 
@@ -101,7 +96,6 @@ struct PostRowView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            // 아바타 원형
             ZStack {
                 Circle()
                     .fill(avatarColor(for: post.author))
@@ -112,38 +106,29 @@ struct PostRowView: View {
             }
 
             VStack(alignment: .leading, spacing: 5) {
-                // 작성자 + 날짜
-                HStack(alignment: .center, spacing: 0) {
+                HStack(alignment: .center) {
                     Text(post.author)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+                        .font(.subheadline).fontWeight(.semibold)
                         .lineLimit(1)
                     Spacer()
                     Text(post.date)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(.caption).foregroundColor(.secondary)
                 }
 
-                // 말머리 + 제목 + 댓글수
                 HStack(alignment: .top, spacing: 4) {
                     if !post.maemuri.isEmpty {
                         Text(post.maemuri)
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.blue)
-                            .fixedSize()
+                            .font(.caption2).fontWeight(.semibold)
+                            .foregroundColor(.blue).fixedSize()
                     }
                     Text(post.title)
-                        .font(.subheadline)
-                        .lineLimit(2)
+                        .font(.subheadline).lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                     if post.commentCount > 0 {
                         Text("[\(post.commentCount)]")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.red)
-                            .fixedSize()
+                            .font(.caption).fontWeight(.semibold)
+                            .foregroundColor(.red).fixedSize()
                     }
                 }
             }
@@ -174,10 +159,8 @@ struct BoardDrawer: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 Text("게시판")
-                    .font(.title3)
-                    .fontWeight(.bold)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
+                    .font(.title3).fontWeight(.bold)
+                    .padding(.horizontal, 20).padding(.vertical, 16)
 
                 Divider()
 
@@ -192,14 +175,11 @@ struct BoardDrawer: View {
                             Image(systemName: "bubble.left.and.bubble.right.fill")
                                 .foregroundColor(board.id == selectedBoard.id ? .blue : .secondary)
                                 .frame(width: 24)
-                            Text(board.name)
-                                .font(.body)
-                                .foregroundColor(.primary)
+                            Text(board.name).font(.body).foregroundColor(.primary)
                             Spacer()
                             if board.id == selectedBoard.id {
                                 Image(systemName: "checkmark")
-                                    .foregroundColor(.blue)
-                                    .fontWeight(.semibold)
+                                    .foregroundColor(.blue).fontWeight(.semibold)
                             }
                         }
                         .padding(.vertical, 6)

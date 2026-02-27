@@ -6,8 +6,11 @@ struct ContentView: View {
 
     var body: some View {
         TabView {
-            PostListView(board: $selectedBoard)
-                .tabItem { Label("불펜", systemImage: "flame") }
+            // 불펜 탭 - NavigationStack은 여기서만 1번 감싸기
+            NavigationStack {
+                PostListView(board: $selectedBoard)
+            }
+            .tabItem { Label("불펜", systemImage: "flame") }
 
             BoardsView()
                 .tabItem { Label("게시판", systemImage: "list.bullet.rectangle") }

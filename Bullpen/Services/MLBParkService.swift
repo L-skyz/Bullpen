@@ -124,34 +124,38 @@ class MLBParkService {
     private func parsePostDetail(html: String, boardId: String, postId: String) throws -> PostDetail {
         let doc = try SwiftSoup.parse(html)
 
-        let titleEl   = try doc.select("div.titles").first()
+        // 말머리: div.titles > a > span.word
+        let titleEl = try doc.select("div.titles").first()
+        let maemuri = try titleEl?.select("span.word").first()?.text() ?? ""
+
+        // 제목: div.titles 전체 텍스트에서 말머리 제거
         let titleFull = try titleEl?.text() ?? ""
+        let title = maemuri.isEmpty ? titleFull
+            : titleFull.replacingOccurrences(of: maemuri, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // 말머리 (div.titles 안 span.mark 등)
-        let maemuri   = try titleEl?.select("span.mark, span.label, em").first()?.text() ?? ""
-        let title     = maemuri.isEmpty ? titleFull :
-            titleFull.replacingOccurrences(of: maemuri, with: "")
-                      .trimmingCharacters(in: .whitespacesAndNewlines)
+        // 작성자: div.text1 span.nick
+        let author = try doc.select("div.text1 span.nick").first()?.text() ?? ""
 
-        let author = try doc.select(".view_head .nick").first()?.text() ?? ""
-        let date   = try doc.select(".view_head .text3 span.val").first()?.text() ?? ""
+        // 날짜: div.text3 span.val
+        let date = try doc.select("div.text3 span.val").first()?.text() ?? ""
 
-        // 추천/조회/댓글 수
-        let vals         = try doc.select(".view_head .text2 span.val")
-        let recommend    = vals.count > 0 ? (Int(try vals.get(0).text()) ?? 0) : 0
-        let views        = vals.count > 1 ? (Int(try vals.get(1).text()) ?? 0) : 0
+        // 추천/조회/댓글: div.text2 span.val (3개)
+        let vals      = try doc.select("div.text2 span.val")
+        let recommend = vals.count > 0 ? (Int(try vals.get(0).text()) ?? 0) : 0
+        let views     = vals.count > 1 ? (Int(try vals.get(1).text()) ?? 0) : 0
         let commentCount = vals.count > 2 ? (Int(try vals.get(2).text()) ?? 0) : 0
 
-        let contentHTML = try doc.select("div.contents").first()?.html() ?? ""
+        // 본문: div.ar_txt (사이드바/광고 제외한 순수 본문)
+        let contentHTML = try doc.select("div.ar_txt").first()?.html() ?? ""
 
-        // 댓글
+        // 댓글: .reply_list .other_reply
         var comments: [Comment] = []
         let commentEls = try doc.select(".reply_list .other_reply")
         for (i, el) in commentEls.enumerated() {
-            let nick  = try el.select(".name").first()?.text() ?? ""
-            let cDate = try el.select(".date").first()?.text() ?? ""
-            let ip    = try el.select(".ip").first()?.text() ?? ""
-            let text  = try el.select(".re_txt").first()?.text() ?? ""
+            let nick  = try el.select("span.name").first()?.text() ?? ""
+            let cDate = try el.select("span.date").first()?.text() ?? ""
+            let ip    = try el.select("span.ip").first()?.text() ?? ""
+            let text  = try el.select("span.re_txt").first()?.text() ?? ""
             comments.append(Comment(id: "\(postId)_c\(i)", author: nick, date: cDate, ip: ip, content: text))
         }
 
