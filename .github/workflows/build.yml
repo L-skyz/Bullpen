@@ -1,4 +1,4 @@
-Name: Build Bullpen IPA
+name: Build Bullpen IPA
 
 on:
   push:
