@@ -158,15 +158,16 @@ struct PostDetailView: View {
 // MARK: - 뒤로가기 버튼 숨김 + 스와이프백 유지
 
 private struct SwipeBackEnabler: UIViewControllerRepresentable {
-    func makeUIViewController(context: Context) -> UIViewController {
-        let vc = UIViewController()
-        DispatchQueue.main.async {
-            vc.navigationController?.interactivePopGestureRecognizer?.isEnabled = true
-            vc.navigationController?.interactivePopGestureRecognizer?.delegate = nil
+    func makeUIViewController(context: Context) -> Enabler { Enabler() }
+    func updateUIViewController(_ uiViewController: Enabler, context: Context) {}
+
+    final class Enabler: UIViewController {
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            navigationController?.interactivePopGestureRecognizer?.isEnabled = true
+            navigationController?.interactivePopGestureRecognizer?.delegate = nil
         }
-        return vc
     }
-    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
 }
 
 // MARK: - HTML 본문 렌더링 (WKWebView)
