@@ -9,7 +9,7 @@ on:
 jobs:
   build:
     runs-on: macos-15
-    # 빌드 결과물을 Release에 올리려면 쓰기 권한이 필요합니다
+    # Release 업로드를 위해 권한 설정 필수
     permissions:
       contents: write
 
@@ -46,10 +46,9 @@ jobs:
           mkdir -p build/ipa Payload
           cp -r "$APP_PATH" Payload/
           chmod -R 755 "Payload/$APP_NAME"
-          # Krava 연동을 위해 파일명을 Bullpen.ipa로 고정합니다
+          # Krava 연동을 위해 파일명을 Bullpen.ipa로 고정
           zip -r "build/ipa/Bullpen.ipa" Payload
 
-      # 1. 고정된 다운로드 링크를 위해 GitHub Release에 업로드
       - name: Release 업로드
         uses: softprops/action-gh-release@v2
         with:
@@ -59,25 +58,24 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. 텔레그램으로 설치 링크 쏘기
       - name: 텔레그램 알림 발송
         run: |
-          # 고정된 IPA 직링크
+          # 1. 고정된 IPA 직접 다운로드 주소
           IPA_URL="https://github.com/${{ github.repository }}/releases/download/latest/Bullpen.ipa"
           
-          # Krava 연동 스킴 (Krava 앱에서 사용하는 형식)
-          # 만약 Krava에서 인식을 못하면 esign:// 또는 feather:// 로 바꿔보세요
+          # 2. 설치 스킴 설정
+          # 만약 krava:// 가 작동하지 않는다면 esign:// 또는 feather:// 로 변경해 보세요.
           INSTALL_URL="krava://import?url=$IPA_URL"
           
-          # 메시지 구성
-          MESSAGE="🚀 **불펜 빌드 완료!**%0A%0A아래 링크를 눌러 Krava로 즉시 설치하세요.%0A%0A[👉 앱 설치하기]($INSTALL_URL)"
+          # 3. 텔레그램 메시지 (HTML 방식이 링크 렌더링에 훨씬 강합니다)
+          MESSAGE="<b>🚀 빌드 완료!</b>%0A%0A<a href='$INSTALL_URL'>👉 [여기를 눌러 Krava로 즉시 설치]</a>"
           
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d "text=$MESSAGE" \
-            -d "parse_mode=Markdown"
+            -d "parse_mode=HTML"
 
       - name: 다운로드 링크 summary 출력
         run: |
-          echo "### 불펜 IPA" >> "$GITHUB_STEP_SUMMARY"
-          echo "[다운로드](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> "$GITHUB_STEP_SUMMARY"
+          echo "### 불펜 IPA 빌드 결과" >> "$GITHUB_STEP_SUMMARY"
+          echo "[직접 다운로드 링크](https://github.com/${{ github.repository }}/releases/download/latest/Bullpen.ipa)" >> "$GITHUB_STEP_SUMMARY"
