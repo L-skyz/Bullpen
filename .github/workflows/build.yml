@@ -3,6 +3,7 @@ name: Build Bullpen IPA
 on:
   push:
     branches:
+      - master
       - main
 
 jobs:
