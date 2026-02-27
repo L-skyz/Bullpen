@@ -35,6 +35,19 @@ struct ContentView: View {
                         .transition(.move(edge: .leading))
                 }
             }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 40, coordinateSpace: .global)
+                    .onEnded { v in
+                        guard navPath.isEmpty else { return }
+                        let dx = v.translation.width
+                        let dy = abs(v.translation.height)
+                        if dx > 60 && dy < 80 {
+                            withAnimation(.easeInOut(duration: 0.25)) { showDrawer = true }
+                        } else if dx < -60 && dy < 80 {
+                            withAnimation(.easeInOut(duration: 0.25)) { showDrawer = false }
+                        }
+                    }
+            )
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
@@ -45,19 +58,6 @@ struct ContentView: View {
                 }
             }
         }
-        .gesture(
-            DragGesture(minimumDistance: 40, coordinateSpace: .local)
-                .onEnded { v in
-                    guard navPath.isEmpty else { return }
-                    let dx = v.translation.width
-                    let dy = abs(v.translation.height)
-                    if dx > 60 && dy < 80 {
-                        withAnimation(.easeInOut(duration: 0.25)) { showDrawer = true }
-                    } else if dx < -60 && dy < 80 {
-                        withAnimation(.easeInOut(duration: 0.25)) { showDrawer = false }
-                    }
-                }
-        )
     }
 }
 
