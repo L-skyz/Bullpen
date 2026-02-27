@@ -1,16 +1,13 @@
-name: Build Bullpen IPA
+Name: Build and Export IPA
 
 on:
   push:
     branches:
-      - master
       - main
 
 jobs:
   build:
-    runs-on: macos-15
-    permissions:
-      contents: write
+    runs-on: macos-26
 
     steps:
       - name: 코드 체크아웃
@@ -19,16 +16,10 @@ jobs:
       - name: Xcode 선택
         run: sudo xcode-select -s /Applications/Xcode.app
 
-      - name: XcodeGen 설치
-        run: brew install xcodegen
-
-      - name: xcodeproj 생성
-        run: xcodegen generate
-
-      - name: 빌드
+      - name: 프로젝트 빌드 (서명 없이)
         run: |
-          xcodebuild -project Bullpen.xcodeproj \
-            -scheme Bullpen \
+          xcodebuild -project Demo/SwiftUI/Player.xcodeproj \
+            -scheme Player \
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build/DerivedData \
@@ -41,37 +32,22 @@ jobs:
         run: |
           APP_PATH=$(find build/DerivedData/Build/Products/Release-iphoneos -name "*.app" -maxdepth 1 | sort | tail -1)
           APP_NAME=$(basename "$APP_PATH")
+          echo "앱 이름: $APP_NAME"
+
           rm -rf Payload build/ipa
           mkdir -p build/ipa Payload
           cp -r "$APP_PATH" Payload/
           chmod -R 755 "Payload/$APP_NAME"
-          zip -r "build/ipa/Bullpen.ipa" Payload
+          zip -r "build/ipa/${APP_NAME%.app}.ipa" Payload
+          ls -lh build/ipa/*.ipa
 
-      - name: Release 업로드
-        uses: softprops/action-gh-release@v2
+      - name: IPA 업로드
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: latest
-          files: build/ipa/Bullpen.ipa
-          overwrite: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: Player-ipa
+          path: build/ipa/*.ipa
 
-      - name: 텔레그램 알림 발송
-        env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      - name: 다운로드 링크 summary에 출력
         run: |
-          # 1. IPA 직접 다운로드 주소
-          IPA_URL="https://github.com/${{ github.repository }}/releases/download/latest/Bullpen.ipa"
-          
-          # 2. Krava 다이렉트 스킴 생성
-          INSTALL_URL="krava://import?url=$IPA_URL"
-          
-          # 3. HTML 태그를 사용하여 텔레그램이 링크로 인식하게 강제함
-          # <a href="..."> 태그를 쓰면 커스텀 스킴도 파란색 링크가 됩니다.
-          MESSAGE="<b>🚀 빌드 완료!</b>%0A%0A<a href='$INSTALL_URL'>👉 [여기를 눌러 즉시 설치]</a>"
-          
-          curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-            -d "chat_id=$CHAT_ID" \
-            -d "text=$MESSAGE" \
-            -d "parse_mode=HTML"
+          echo "### 다운로드 링크" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Player.ipa 다운로드](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> "$GITHUB_STEP_SUMMARY"
