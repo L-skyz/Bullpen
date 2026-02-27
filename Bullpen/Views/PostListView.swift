@@ -46,6 +46,7 @@ struct PostListView: View {
     @State private var scrollPosition = ScrollPosition(idType: String.self)
     @State private var searchText = ""
     @State private var activeKeyword: String? = nil
+    @State private var isSearchPresented = false
 
     private var maemurList: [String] {
         guard !board.maemuri.isEmpty else { return [] }
@@ -91,6 +92,11 @@ struct PostListView: View {
         .scrollPosition($scrollPosition)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { isSearchPresented = true } label: {
+                    Image(systemName: "magnifyingglass")
+                }
+            }
             ToolbarItem(placement: .principal) {
                 if !maemurList.isEmpty {
                     Menu {
@@ -132,7 +138,7 @@ struct PostListView: View {
         .navigationDestination(for: Post.self) { post in
             PostDetailView(boardId: post.boardId, postId: post.id)
         }
-        .searchable(text: $searchText, prompt: "제목 검색")
+        .searchable(text: $searchText, isPresented: $isSearchPresented, prompt: "제목 검색")
         .onSubmit(of: .search) {
             let kw = searchText.trimmingCharacters(in: .whitespaces)
             activeKeyword = kw.isEmpty ? nil : kw
@@ -141,6 +147,14 @@ struct PostListView: View {
         }
         .onChange(of: searchText) { _, new in
             if new.isEmpty {
+                activeKeyword = nil
+                scrollPosition = ScrollPosition(idType: String.self)
+                Task { await vm.load(boardId: board.id, maemuri: selectedMaemuri == "전체" ? nil : selectedMaemuri, reset: true) }
+            }
+        }
+        .onChange(of: isSearchPresented) { _, presented in
+            if !presented && activeKeyword != nil {
+                searchText = ""
                 activeKeyword = nil
                 scrollPosition = ScrollPosition(idType: String.self)
                 Task { await vm.load(boardId: board.id, maemuri: selectedMaemuri == "전체" ? nil : selectedMaemuri, reset: true) }

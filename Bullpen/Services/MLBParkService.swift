@@ -95,7 +95,7 @@ class MLBParkService {
     /// 제목 키워드 검색
     func fetchPostsByKeyword(boardId: String, keyword: String, page: Int = 1) async throws -> [Post] {
         let encoded = keyword.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? keyword
-        let urlStr = "\(base)/mp/b.php?b=\(boardId)&m=search&search_select=stt&search_input=\(encoded)&p=\(page)"
+        let urlStr = "\(base)/mp/b.php?b=\(boardId)&m=search&select=stt&query=\(encoded)&p=\(page)"
         let html = try await fetch(urlStr)
         return try parsePostList(html: html, boardId: boardId, isSearch: true)
     }
