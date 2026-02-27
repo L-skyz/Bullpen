@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 // 왼쪽 엣지(44pt)만 hitTest 통과, 나머지는 nil → 하위 뷰에 터치 전달
-private class LeftEdgeView: UIView {
+final class LeftEdgeView: UIView {
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         point.x <= 44 ? self : nil
     }
