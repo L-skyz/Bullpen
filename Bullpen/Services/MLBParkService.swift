@@ -92,10 +92,10 @@ class MLBParkService {
         return try parsePostList(html: html, boardId: boardId)
     }
 
-    /// 제목 키워드 검색
-    func fetchPostsByKeyword(boardId: String, keyword: String, page: Int = 1) async throws -> [Post] {
+    /// 키워드 검색 (select: stt=제목, sct=제목+내용, swt=닉네임, spf=말머리)
+    func fetchPostsByKeyword(boardId: String, keyword: String, select: String = "stt", page: Int = 1) async throws -> [Post] {
         let encoded = keyword.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? keyword
-        let urlStr = "\(base)/mp/b.php?b=\(boardId)&m=search&select=stt&query=\(encoded)&p=\(page)"
+        let urlStr = "\(base)/mp/b.php?b=\(boardId)&m=search&select=\(select)&query=\(encoded)&p=\(page)"
         let html = try await fetch(urlStr)
         return try parsePostList(html: html, boardId: boardId, isSearch: true)
     }

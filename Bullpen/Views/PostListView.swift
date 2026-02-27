@@ -1,5 +1,29 @@
 import SwiftUI
 
+enum SearchScope: String, CaseIterable {
+    case title     = "stt"
+    case titleBody = "sct"
+    case nickname  = "swt"
+    case maemuri   = "spf"
+
+    var label: String {
+        switch self {
+        case .title:     return "제목"
+        case .titleBody: return "제목+내용"
+        case .nickname:  return "닉네임"
+        case .maemuri:   return "말머리"
+        }
+    }
+    var prompt: String {
+        switch self {
+        case .title:     return "제목 검색"
+        case .titleBody: return "제목+내용 검색"
+        case .nickname:  return "닉네임 검색"
+        case .maemuri:   return "말머리 검색"
+        }
+    }
+}
+
 @MainActor
 class PostListViewModel: ObservableObject {
     @Published var posts: [Post] = []
@@ -8,7 +32,7 @@ class PostListViewModel: ObservableObject {
     @Published var hasMore = true
     private var page = 1
 
-    func load(boardId: String, maemuri: String? = nil, keyword: String? = nil, reset: Bool = false) async {
+    func load(boardId: String, maemuri: String? = nil, keyword: String? = nil, searchSelect: String = "stt", reset: Bool = false) async {
         let startPage = reset ? 1 : page
         if reset { hasMore = true }
         guard hasMore else { return }
@@ -17,7 +41,7 @@ class PostListViewModel: ObservableObject {
         do {
             let newPosts: [Post]
             if let kw = keyword, !kw.isEmpty {
-                newPosts = try await MLBParkService.shared.fetchPostsByKeyword(boardId: boardId, keyword: kw, page: startPage)
+                newPosts = try await MLBParkService.shared.fetchPostsByKeyword(boardId: boardId, keyword: kw, select: searchSelect, page: startPage)
             } else if let m = maemuri, !m.isEmpty {
                 newPosts = try await MLBParkService.shared.fetchPostsByMaemuri(boardId: boardId, maemuri: m, page: startPage)
             } else {
@@ -47,6 +71,7 @@ struct PostListView: View {
     @State private var searchText = ""
     @State private var activeKeyword: String? = nil
     @State private var isSearchPresented = false
+    @State private var searchScope: SearchScope = .title
 
     private var maemurList: [String] {
         guard !board.maemuri.isEmpty else { return [] }
@@ -74,7 +99,7 @@ struct PostListView: View {
                     .id(post.id)
                     .onAppear {
                         if post.id == vm.posts.last?.id {
-                            Task { await vm.load(boardId: board.id, maemuri: activeMaemuri, keyword: activeKeyword) }
+                            Task { await vm.load(boardId: board.id, maemuri: activeMaemuri, keyword: activeKeyword, searchSelect: searchScope.rawValue) }
                         }
                     }
                 }
@@ -138,18 +163,29 @@ struct PostListView: View {
         .navigationDestination(for: Post.self) { post in
             PostDetailView(boardId: post.boardId, postId: post.id)
         }
-        .searchable(text: $searchText, isPresented: $isSearchPresented, prompt: "제목 검색")
+        .searchable(text: $searchText, isPresented: $isSearchPresented, prompt: searchScope.prompt)
+        .searchScopes($searchScope) {
+            ForEach(SearchScope.allCases, id: \.self) { scope in
+                Text(scope.label).tag(scope)
+            }
+        }
         .onSubmit(of: .search) {
             let kw = searchText.trimmingCharacters(in: .whitespaces)
             activeKeyword = kw.isEmpty ? nil : kw
             scrollPosition = ScrollPosition(idType: String.self)
-            Task { await vm.load(boardId: board.id, keyword: activeKeyword, reset: true) }
+            Task { await vm.load(boardId: board.id, keyword: activeKeyword, searchSelect: searchScope.rawValue, reset: true) }
         }
         .onChange(of: searchText) { _, new in
             if new.isEmpty {
                 activeKeyword = nil
                 scrollPosition = ScrollPosition(idType: String.self)
                 Task { await vm.load(boardId: board.id, maemuri: selectedMaemuri == "전체" ? nil : selectedMaemuri, reset: true) }
+            }
+        }
+        .onChange(of: searchScope) { _, _ in
+            if activeKeyword != nil {
+                scrollPosition = ScrollPosition(idType: String.self)
+                Task { await vm.load(boardId: board.id, keyword: activeKeyword, searchSelect: searchScope.rawValue, reset: true) }
             }
         }
         .onChange(of: isSearchPresented) { _, presented in
@@ -164,12 +200,13 @@ struct PostListView: View {
             selectedMaemuri = "전체"
             searchText = ""
             activeKeyword = nil
+            searchScope = .title
             scrollPosition = ScrollPosition(idType: String.self)
             await vm.load(boardId: board.id, reset: true)
         }
         .refreshable {
             scrollPosition = ScrollPosition(idType: String.self)
-            await vm.load(boardId: board.id, maemuri: activeMaemuri, keyword: activeKeyword, reset: true)
+            await vm.load(boardId: board.id, maemuri: activeMaemuri, keyword: activeKeyword, searchSelect: searchScope.rawValue, reset: true)
         }
     }
 }
