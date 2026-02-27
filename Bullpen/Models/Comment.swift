@@ -1,0 +1,20 @@
+import Foundation
+
+struct Comment: Identifiable {
+    let id: String
+    let author: String
+    let date: String
+    let ip: String
+    let content: String
+    var replies: [Comment]
+
+    init(id: String, author: String, date: String, ip: String,
+         content: String, replies: [Comment] = []) {
+        self.id = id
+        self.author = author
+        self.date = date
+        self.ip = ip
+        self.content = content
+        self.replies = replies
+    }
+}
