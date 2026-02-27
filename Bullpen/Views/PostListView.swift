@@ -35,6 +35,7 @@ struct PostListView: View {
     @StateObject private var vm = PostListViewModel()
     @State private var showBoardDrawer = false
     @State private var selectedMaemuri: String = "전체"
+    @State private var scrollPosition = ScrollPosition(idType: String.self)
 
     // 게시판 고정 말머리 목록 ("전체" 포함)
     private var maemurList: [String] {
@@ -48,30 +49,38 @@ struct PostListView: View {
 
     var body: some View {
         ZStack {
-            List {
-                ForEach(vm.posts) { post in
-                    NavigationLink(value: post) {
-                        PostRowView(post: post)
-                    }
-                    .listRowSeparator(.visible)
-                    .listRowInsets(.init(top: 8, leading: 12, bottom: 8, trailing: 12))
-                    .onAppear {
-                        if post.id == vm.posts.last?.id {
-                            Task { await vm.load(boardId: board.id, maemuri: activeMaemuri) }
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(vm.posts) { post in
+                        VStack(spacing: 0) {
+                            NavigationLink(value: post) {
+                                PostRowView(post: post)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                            }
+                            .buttonStyle(.plain)
+
+                            Divider().padding(.leading, 64)
+                        }
+                        .id(post.id)
+                        .onAppear {
+                            if post.id == vm.posts.last?.id {
+                                Task { await vm.load(boardId: board.id, maemuri: activeMaemuri) }
+                            }
                         }
                     }
-                }
 
-                if vm.isLoading {
-                    HStack { Spacer(); ProgressView(); Spacer() }
-                        .listRowBackground(Color.clear)
-                }
-                if let err = vm.error {
-                    Text(err).foregroundColor(.red).font(.caption)
-                        .listRowBackground(Color.clear)
+                    if vm.isLoading {
+                        HStack { Spacer(); ProgressView(); Spacer() }
+                            .padding()
+                    }
+                    if let err = vm.error {
+                        Text(err).foregroundColor(.red).font(.caption)
+                            .padding()
+                    }
                 }
             }
-            .listStyle(.plain)
+            .scrollPosition($scrollPosition)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 // 좌측: 게시판 드로어 토글 버튼
@@ -91,6 +100,7 @@ struct PostListView: View {
                                 Button {
                                     if m != selectedMaemuri {
                                         selectedMaemuri = m
+                                        scrollPosition = ScrollPosition(idType: String.self)
                                         Task {
                                             await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true)
                                         }
@@ -126,11 +136,13 @@ struct PostListView: View {
             }
             .task(id: board.id) {
                 selectedMaemuri = "전체"
+                scrollPosition = ScrollPosition(idType: String.self)
                 await vm.load(boardId: board.id, reset: true)
             }
             .refreshable {
-                selectedMaemuri = "전체"
-                await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true)
+                let prevMaemuri = activeMaemuri
+                scrollPosition = ScrollPosition(idType: String.self)
+                await vm.load(boardId: board.id, maemuri: prevMaemuri, reset: true)
             }
 
             // 왼쪽에서 슬라이드되는 게시판 드로어
