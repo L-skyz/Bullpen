@@ -57,18 +57,21 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 텔레그램 알림 발송
-        # 비밀값을 쉘 환경 변수로 확실하게 주입합니다
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
+          # 1. IPA 직접 다운로드 주소
           IPA_URL="https://github.com/${{ github.repository }}/releases/download/latest/Bullpen.ipa"
-          INSTALL_URL="https://sign.kravasign.com/?url=$IPA_URL"
-          MESSAGE="🚀 빌드 완료! 아래 링크를 눌러 설치하세요.
           
-          $INSTALL_URL"
+          # 2. Krava 다이렉트 스킴 생성
+          INSTALL_URL="krava://import?url=$IPA_URL"
           
-          # 변수를 $BOT_TOKEN과 $CHAT_ID로 사용합니다
+          # 3. HTML 태그를 사용하여 텔레그램이 링크로 인식하게 강제함
+          # <a href="..."> 태그를 쓰면 커스텀 스킴도 파란색 링크가 됩니다.
+          MESSAGE="<b>🚀 빌드 완료!</b>%0A%0A<a href='$INSTALL_URL'>👉 [여기를 눌러 즉시 설치]</a>"
+          
           curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-            --data-urlencode "chat_id=$CHAT_ID" \
-            --data-urlencode "text=$MESSAGE"
+            -d "chat_id=$CHAT_ID" \
+            -d "text=$MESSAGE" \
+            -d "parse_mode=HTML"
