@@ -10,9 +10,6 @@ struct WritePostView: View {
     @State private var showSuccess = false
     @State private var errorMessage: String?
 
-    // 말머리 목록 (게시판별로 다를 수 있음)
-    let maemuriOptions = ["없음", "잡담", "정보", "분석", "질문", "사진", "동영상", "뉴스"]
-
     var body: some View {
         Group {
             if !auth.isLoggedIn {
@@ -31,13 +28,16 @@ struct WritePostView: View {
                         }
                     }
 
-                    Section("말머리") {
-                        Picker("말머리", selection: $maemuri) {
-                            ForEach(maemuriOptions, id: \.self) { opt in
-                                Text(opt).tag(opt == "없음" ? "" : opt)
+                    if !selectedBoard.maemuri.isEmpty {
+                        Section("말머리") {
+                            Picker("말머리", selection: $maemuri) {
+                                Text("없음").tag("")
+                                ForEach(selectedBoard.maemuri, id: \.self) { opt in
+                                    Text(opt).tag(opt)
+                                }
                             }
+                            .pickerStyle(.menu)
                         }
-                        .pickerStyle(.menu)
                     }
 
                     Section("제목") {
@@ -68,6 +68,7 @@ struct WritePostView: View {
                 }
             }
         }
+        .onChange(of: selectedBoard) { _, _ in maemuri = "" }
         .navigationTitle("글쓰기")
         .navigationBarTitleDisplayMode(.inline)
     }

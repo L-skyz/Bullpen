@@ -257,27 +257,30 @@ class MLBParkService {
     // MARK: - 글쓰기
 
     func writePost(boardId: String, maemuri: String, title: String, content: String) async throws {
-        guard let url = URL(string: "\(base)/mp/action.php") else { throw MLBParkError.invalidURL }
+        guard let url = URL(string: "\(base)/mp/b.php") else { throw MLBParkError.invalidURL }
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
         req.setValue("\(base)/mp/b.php?b=\(boardId)&m=write", forHTTPHeaderField: "Referer")
-        req.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
 
         let params: [String: String] = [
-            "m":       "INSERT",
             "b":       boardId,
+            "m":       "write",
             "maemuri": maemuri,
             "subject": title,
             "content": content,
         ]
         req.httpBody = params.urlEncoded.data(using: .utf8)
 
-        let (_, resp) = try await session.data(for: req)
+        let (data, resp) = try await session.data(for: req)
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
+        }
+        let body = String(data: data, encoding: .utf8) ?? ""
+        if body.contains("로그인") || body.contains("fail") {
+            throw MLBParkError.networkError("글쓰기 실패. 로그인 상태를 확인하세요.")
         }
     }
 
