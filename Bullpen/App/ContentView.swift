@@ -12,9 +12,10 @@ struct ContentView: View {
     @State private var section: AppSection = .board
     @State private var selectedBoard: Board = Board.all.first(where: { $0.id == "bullpen" }) ?? Board.all[0]
     @State private var showDrawer = false
+    @State private var navPath = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navPath) {
             ZStack {
                 Group {
                     switch section {
@@ -47,6 +48,7 @@ struct ContentView: View {
         .gesture(
             DragGesture(minimumDistance: 40, coordinateSpace: .local)
                 .onEnded { v in
+                    guard navPath.isEmpty else { return }
                     let dx = v.translation.width
                     let dy = abs(v.translation.height)
                     if dx > 60 && dy < 80 {

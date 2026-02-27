@@ -143,6 +143,7 @@ struct PostDetailView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
         .task { await vm.load(boardId: boardId, postId: postId) }
     }
 
