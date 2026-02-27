@@ -1,6 +1,8 @@
 import SwiftUI
 import UIKit
 
+private let drawerSpring = Animation.spring(response: 0.32, dampingFraction: 0.84)
+
 // 왼쪽 엣지(44pt)만 hitTest 통과, 나머지는 nil → 하위 뷰에 터치 전달
 final class LeftEdgeView: UIView {
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
@@ -80,7 +82,7 @@ struct ContentView: View {
             }
             .overlay {
                 EdgeOpenGestureView(
-                    onOpen: { withAnimation(.easeInOut(duration: 0.25)) { showDrawer = true } },
+                    onOpen: { withAnimation(drawerSpring) { showDrawer = true } },
                     isEnabled: navPath.isEmpty && !showDrawer
                 )
                 .ignoresSafeArea()
@@ -89,7 +91,7 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
-                        withAnimation(.easeInOut(duration: 0.25)) { showDrawer = true }
+                        withAnimation(drawerSpring) { showDrawer = true }
                     } label: {
                         Image(systemName: "list.bullet.rectangle")
                     }
@@ -110,9 +112,14 @@ struct AppDrawer: View {
         ZStack(alignment: .leading) {
             Color.black.opacity(0.35)
                 .ignoresSafeArea()
-                .onTapGesture {
-                    withAnimation(.easeInOut(duration: 0.25)) { isShowing = false }
-                }
+                .gesture(
+                    DragGesture()
+                        .onEnded { v in
+                            if v.translation.width < -40 {
+                                withAnimation(drawerSpring) { isShowing = false }
+                            }
+                        }
+                )
 
             VStack(alignment: .leading, spacing: 0) {
                 Text("메뉴")
@@ -125,7 +132,7 @@ struct AppDrawer: View {
                     Section("게시판") {
                         ForEach(Board.all) { board in
                             Button {
-                                withAnimation(.easeInOut(duration: 0.2)) {
+                                withAnimation(drawerSpring) {
                                     selectedBoard = board
                                     section = .board
                                     isShowing = false
@@ -157,13 +164,21 @@ struct AppDrawer: View {
             }
             .frame(width: min(UIScreen.main.bounds.width * 0.72, 300))
             .background(Color(.systemBackground))
+            .gesture(
+                DragGesture()
+                    .onEnded { v in
+                        if v.translation.width < -40 {
+                            withAnimation(drawerSpring) { isShowing = false }
+                        }
+                    }
+            )
         }
     }
 
     @ViewBuilder
     private func drawerItem(label: String, icon: String, target: AppSection) -> some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(drawerSpring) {
                 section = target
                 isShowing = false
             }
