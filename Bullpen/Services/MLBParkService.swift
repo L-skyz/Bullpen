@@ -219,7 +219,8 @@ class MLBParkService {
     // MARK: - 유틸
 
     private func extractParam(_ key: String, from path: String) -> String? {
-        guard let url = URL(string: "\(base)/\(path)"),
+        let urlStr = path.hasPrefix("http") ? path : "\(base)/\(path)"
+        guard let url = URL(string: urlStr),
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let item = components.queryItems?.first(where: { $0.name == key })
         else { return nil }

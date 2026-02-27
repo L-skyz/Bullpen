@@ -2,11 +2,11 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var auth: AuthService
+    @State private var selectedBoard: Board = Board.all.first(where: { $0.id == "bullpen" }) ?? Board.all[0]
 
     var body: some View {
         TabView {
-            // 불펜을 첫 번째 기본 탭으로
-            PostListView(board: Board(id: "bullpen", name: "불펜"))
+            PostListView(board: $selectedBoard)
                 .tabItem { Label("불펜", systemImage: "flame") }
 
             BoardsView()
