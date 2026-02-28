@@ -33,9 +33,12 @@ class PostListViewModel: ObservableObject {
         guard hasMore else { return }
         isLoading = true; error = nil
         do {
-            let newPosts: [Post] = try await (maemuri.map { m in
-                MLBParkService.shared.fetchPostsByMaemuri(boardId: boardId, maemuri: m, page: startPage)
-            } ?? MLBParkService.shared.fetchPosts(boardId: boardId, page: startPage))
+            let newPosts: [Post]
+            if let m = maemuri, !m.isEmpty {
+                newPosts = try await MLBParkService.shared.fetchPostsByMaemuri(boardId: boardId, maemuri: m, page: startPage)
+            } else {
+                newPosts = try await MLBParkService.shared.fetchPosts(boardId: boardId, page: startPage)
+            }
             if reset { posts = [] }
             page = startPage + 1
             if newPosts.isEmpty { hasMore = false }
