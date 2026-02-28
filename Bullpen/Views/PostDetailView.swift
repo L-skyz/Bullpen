@@ -21,10 +21,15 @@ class PostDetailViewModel: ObservableObject {
     }
 
     func submitComment(boardId: String, postId: String) async {
-        guard !commentInput.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        let trimmed = commentInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard trimmed.count <= 300 else {
+            actionError = "댓글은 300자 이하로 입력해주세요."
+            return
+        }
         isSubmittingComment = true
         do {
-            try await MLBParkService.shared.writeComment(boardId: boardId, postId: postId, content: commentInput)
+            try await MLBParkService.shared.writeComment(boardId: boardId, postId: postId, content: trimmed)
             commentInput = ""
             await load(boardId: boardId, postId: postId)
         } catch {
@@ -224,7 +229,11 @@ struct PostDetailView: View {
                                             .frame(width: 44, height: 36)
                                     }
                                 }
-                                .disabled(vm.commentInput.isEmpty || vm.isSubmittingComment)
+                                .disabled(
+                                    vm.commentInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                                    vm.commentInput.trimmingCharacters(in: .whitespacesAndNewlines).count > 300 ||
+                                    vm.isSubmittingComment
+                                )
                             }
                             .padding()
                         }
