@@ -94,8 +94,8 @@ class MLBParkService {
 
     /// 키워드 검색 (select: stt=제목, sct=제목+내용, swt=닉네임)
     func fetchPostsByKeyword(boardId: String, keyword: String, select: String = "stt", page: Int = 1) async throws -> [Post] {
-        // 한글 검색어: CP949 바이트를 퍼센트 인코딩 (서버가 CP949 기대)
-        let encoded = percentEncodeCP949(keyword)
+        // 검색 쿼리는 UTF-8 퍼센트 인코딩 (서버가 검색 API에서 UTF-8 기대)
+        let encoded = keyword.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? keyword
         let urlStr = "\(base)/mp/b.php?b=\(boardId)&m=search&select=\(select)&query=\(encoded)&p=\(page)"
         let html = try await fetch(urlStr)
         return try parsePostList(html: html, boardId: boardId, isSearch: true)
@@ -103,7 +103,7 @@ class MLBParkService {
 
     /// 말머리 필터 (서버사이드 검색 API 사용)
     func fetchPostsByMaemuri(boardId: String, maemuri: String, page: Int = 1) async throws -> [Post] {
-        let encoded = percentEncodeCP949(maemuri)
+        let encoded = maemuri.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? maemuri
         let urlStr = "\(base)/mp/b.php?search_select=sct&search_input=&select=spf&m=search&b=\(boardId)&query=\(encoded)&p=\(page)"
         let html = try await fetch(urlStr)
         return try parsePostList(html: html, boardId: boardId, isSearch: true)
