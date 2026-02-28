@@ -71,7 +71,8 @@ struct PostListView: View {
                     }
                     .id(post.id)
                     .onAppear {
-                        if post.id == vm.posts.last?.id {
+                        // 마지막 5개 안에 들어오면 미리 로드 (빠른 스크롤 대응)
+                        if vm.posts.suffix(5).contains(where: { $0.id == post.id }) {
                             Task { await vm.load(boardId: board.id, maemuri: activeMaemuri) }
                         }
                     }
