@@ -21,6 +21,7 @@ class PostDetailViewModel: ObservableObject {
     }
 
     func submitComment(boardId: String, postId: String) async {
+        actionError = nil
         let trimmed = commentInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             actionError = "댓글 내용을 입력해주세요."
@@ -42,6 +43,7 @@ class PostDetailViewModel: ObservableObject {
     }
 
     func deletePost(boardId: String, postId: String) async -> Bool {
+        actionError = nil
         do {
             try await MLBParkService.shared.deletePost(boardId: boardId, postId: postId)
             return true
@@ -53,6 +55,7 @@ class PostDetailViewModel: ObservableObject {
 
     func editPost(boardId: String, postId: String, categoryId: String,
                   title: String, content: String) async -> Bool {
+        actionError = nil
         do {
             try await MLBParkService.shared.editPost(boardId: boardId, postId: postId,
                                                      categoryId: categoryId,
@@ -66,6 +69,7 @@ class PostDetailViewModel: ObservableObject {
     }
 
     func deleteComment(boardId: String, postId: String, comment: Comment) async {
+        actionError = nil
         do {
             try await MLBParkService.shared.deleteComment(boardId: boardId, postId: postId,
                                                           commentSeq: comment.seq)
@@ -76,6 +80,7 @@ class PostDetailViewModel: ObservableObject {
     }
 
     func editComment(boardId: String, postId: String, comment: Comment, newContent: String) async {
+        actionError = nil
         let trimmed = newContent.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             actionError = "댓글 내용을 입력해주세요."
@@ -116,6 +121,8 @@ struct PostDetailView: View {
     @State private var editCommentText = ""
     // 댓글 삭제
     @State private var deletingComment: Comment? = nil
+    @State private var showActionErrorAlert = false
+    @State private var actionErrorText = ""
 
     private var isMyPost: Bool {
         guard let d = vm.detail else { return false }
@@ -178,6 +185,7 @@ struct PostDetailView: View {
                                 if isMyPost {
                                     Menu {
                                         Button("수정") {
+                                            vm.actionError = nil
                                             editTitle      = d.title
                                             editContent    = stripHTML(d.contentHTML)
                                             editCategoryId = resolveCategoryId(from: d.maemuri)
@@ -252,7 +260,6 @@ struct PostDetailView: View {
                                     }
                                 }
                                 .disabled(
-                                    vm.commentInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                                     vm.commentInput.trimmingCharacters(in: .whitespacesAndNewlines).count > 300 ||
                                     vm.isSubmittingComment
                                 )
@@ -272,20 +279,24 @@ struct PostDetailView: View {
         .background(SwipeBackEnabler())
         .task { await vm.load(boardId: boardId, postId: postId) }
         // 게시글 삭제 확인
-        .alert("게시글을 삭제하시겠습니까?", isPresented: $showDeletePostAlert) {
+        .confirmationDialog("게시글을 삭제하시겠습니까?",
+                            isPresented: $showDeletePostAlert,
+                            titleVisibility: .visible) {
             Button("삭제", role: .destructive) {
                 Task {
                     let ok = await vm.deletePost(boardId: boardId, postId: postId)
                     if ok { dismiss() }
                 }
             }
-            Button("취소", role: .cancel) {}
+            Button("취소", role: .cancel) { }
         }
         // 댓글 삭제 확인
-        .alert("댓글을 삭제하시겠습니까?", isPresented: Binding(
+        .confirmationDialog("댓글을 삭제하시겠습니까?",
+                            isPresented: Binding(
             get: { deletingComment != nil },
             set: { if !$0 { deletingComment = nil } }
-        )) {
+        ),
+                            titleVisibility: .visible) {
             Button("삭제", role: .destructive) {
                 if let c = deletingComment {
                     Task { await vm.deleteComment(boardId: boardId, postId: postId, comment: c) }
@@ -309,7 +320,8 @@ struct PostDetailView: View {
                 categoryId: $editCategoryId,
                 categories: editCategories,
                 title: $editTitle,
-                content: $editContent
+                content: $editContent,
+                errorMessage: vm.actionError
             ) {
                 Task {
                     let ok = await vm.editPost(boardId: boardId, postId: postId,
@@ -319,14 +331,16 @@ struct PostDetailView: View {
                 }
             }
         }
+        .onChange(of: vm.actionError) { _, newValue in
+            guard let message = newValue, !message.isEmpty else { return }
+            actionErrorText = message
+            showActionErrorAlert = true
+        }
         // 오류 토스트
-        .alert("오류", isPresented: Binding(
-            get: { vm.actionError != nil },
-            set: { if !$0 { vm.actionError = nil } }
-        )) {
-            Button("확인", role: .cancel) { vm.actionError = nil }
+        .alert("오류", isPresented: $showActionErrorAlert) {
+            Button("확인", role: .cancel) { }
         } message: {
-            Text(vm.actionError ?? "")
+            Text(actionErrorText)
         }
     }
 
@@ -412,6 +426,7 @@ struct EditPostSheet: View {
     let categories: [BoardCategory]
     @Binding var title: String
     @Binding var content: String
+    let errorMessage: String?
     let onSubmit: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -434,6 +449,13 @@ struct EditPostSheet: View {
                 Section("내용") {
                     TextEditor(text: $content)
                         .frame(minHeight: 240)
+                }
+                if let errorMessage, !errorMessage.isEmpty {
+                    Section {
+                        Text(errorMessage)
+                            .foregroundColor(.red)
+                            .font(.caption)
+                    }
                 }
             }
             .navigationTitle("게시글 수정")
