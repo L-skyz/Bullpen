@@ -152,6 +152,7 @@ class MLBParkService {
             let title = try titleLink.text()
             let href  = try titleLink.attr("href")
             guard let postId = extractParam("id", from: href) else { continue }
+            let postBoardId = extractParam("b", from: href) ?? boardId
 
             // 댓글수: a.replycnt → "[8]" → 8
             let replyRaw     = try titleTd.select("a.replycnt").first()?.text() ?? "[0]"
@@ -164,7 +165,7 @@ class MLBParkService {
             let views     = Int(try tds.get(4).select("span.viewV").first()?.text() ?? "0") ?? 0
 
             posts.append(Post(
-                id: postId, boardId: boardId, maemuri: maemuri,
+                id: postId, boardId: postBoardId, maemuri: maemuri,
                 title: title, author: author, avatarUrl: avatarUrl,
                 date: date, views: views, commentCount: commentCount,
                 recommendCount: 0
@@ -293,33 +294,53 @@ class MLBParkService {
     // MARK: - 글쓰기
 
     func writePost(boardId: String, categoryId: String, title: String, content: String) async throws {
-        guard let url = URL(string: "\(base)/mp/b.php") else { throw MLBParkError.invalidURL }
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty, !trimmedContent.isEmpty else {
+            throw MLBParkError.networkError("제목과 내용을 입력해주세요.")
+        }
+
+        await warmupIfNeeded()
+        guard let url = URL(string: "\(base)/mp/action.php") else { throw MLBParkError.invalidURL }
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
-        // charset=EUC-KR 명시 → 서버가 올바른 인코딩으로 파싱
-        req.setValue("application/x-www-form-urlencoded; charset=EUC-KR", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
         req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
         req.setValue("\(base)/mp/b.php?b=\(boardId)&m=write", forHTTPHeaderField: "Referer")
+        req.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
 
-        // 한글 필드(subject, content)를 CP949 바이트로 퍼센트 인코딩
-        req.httpBody = buildCP949Form([
+        let info = buildPostInfo(boardId: boardId, categoryId: categoryId, upimg: "")
+        req.httpBody = buildUTF8Form([
             "b":        boardId,
             "m":        "board_INSERT",
-            "category": categoryId,
-            "subject":  title,
-            "content":  content,
-            "upimg":    "",
-            "info":     "",
             "id":       "",
+            "category": categoryId,
+            "subject":  trimmedTitle,
+            "content":  trimmedContent,
+            "upimg":    "",
+            "info":     info,
         ])
 
-        let (_, resp) = try await session.data(for: req)
+        let (data, resp) = try await session.data(for: req)
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
-        // 성공 응답 HTML에도 "로그인"/"nologin" 문자열이 포함되어 오탐 가능
-        // → HTTP 상태 코드 기준으로만 실패 판정
+
+        if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let status = obj["status"] as? String {
+            guard status == "ok" else {
+                throw MLBParkError.networkError("게시글 등록 실패(\(status))")
+            }
+            return
+        }
+
+        let raw = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if raw.isEmpty {
+            throw MLBParkError.networkError("게시글 등록 실패(빈 응답)")
+        }
+        throw MLBParkError.networkError("게시글 등록 실패(\(raw))")
     }
 
     // MARK: - 댓글쓰기
