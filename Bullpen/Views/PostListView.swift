@@ -36,6 +36,7 @@ class PostListViewModel: ObservableObject {
 struct PostListView: View {
     @Binding var board: Board
     @EnvironmentObject var auth: AuthService
+    @EnvironmentObject var filter: BlockFilter
     @StateObject private var vm = PostListViewModel()
     @State private var selectedMaemuri = "전체"
     @State private var scrollPosition = ScrollPosition(idType: String.self)
@@ -49,11 +50,15 @@ struct PostListView: View {
     private var activeMaemuri: String? {
         selectedMaemuri == "전체" ? nil : selectedMaemuri
     }
+    /// 차단 필터 적용된 게시글 목록
+    private var filteredPosts: [Post] {
+        vm.posts.filter { !filter.isBlocked($0) }
+    }
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(vm.posts) { post in
+                ForEach(filteredPosts) { post in
                     VStack(spacing: 0) {
                         Button {
                             if isRestricted(post.maemuri) && !auth.isLoggedIn {

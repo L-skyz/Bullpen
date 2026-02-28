@@ -334,6 +334,103 @@ class MLBParkService {
         }
     }
 
+    // MARK: - 더그아웃 (내게시글 / 내댓글)
+
+    func fetchDugout(source: String, page: Int = 1) async throws -> [DugoutItem] {
+        let html = try await fetch("\(base)/mp/dugout.php?source=\(source)&p=\(page)")
+        return try parseDugout(html: html, isComment: source == "mycomment")
+    }
+
+    private func parseDugout(html: String, isComment: Bool) throws -> [DugoutItem] {
+        let doc = try SwiftSoup.parse(html)
+        var items: [DugoutItem] = []
+
+        let rows = try doc.select("tr[id^=dugout_list_]")
+        for row in rows {
+            // row id = "dugout_list_{id}"
+            let rowId = try row.attr("id").replacingOccurrences(of: "dugout_list_", with: "")
+            guard !rowId.isEmpty else { continue }
+
+            let tds = try row.select("td")
+            guard tds.size() >= 4 else { continue }
+
+            // 제목 td 내 두 번째 <a> = 제목 링크
+            // (첫 번째 <a> 는 아바타 링크)
+            let titleTd  = tds.get(0)
+            let allLinks = try titleTd.select("a")
+            guard allLinks.size() >= 2 else { continue }
+            let titleLink = allLinks.get(1)
+
+            let href         = try titleLink.attr("href")
+            let boardId      = extractParam("b", from: href) ?? ""
+            let originalPost = extractParam("id", from: href) ?? rowId
+            guard !boardId.isEmpty else { continue }
+
+            // 제목 텍스트: 링크의 직접 텍스트 (span.allim 제외)
+            let title = try titleLink.text().trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { continue }
+
+            // 게시판 표시명: td[1]
+            let boardName = try tds.get(1).text().trimmingCharacters(in: .whitespaces)
+
+            // 날짜: td[3]
+            let date = try tds.get(3).text().trimmingCharacters(in: .whitespaces)
+
+            // 댓글 삭제용 sequence (내댓글 전용)
+            let deleteSeq: String
+            if isComment {
+                let delBtn = try row.select(".dugout_delete_item").first()
+                deleteSeq  = (try delBtn?.attr("data-sequence")) ?? ""
+            } else {
+                deleteSeq = ""
+            }
+
+            items.append(DugoutItem(
+                id: rowId,
+                boardId: boardId,
+                boardName: boardName,
+                title: title,
+                date: date,
+                isComment: isComment,
+                originalPostId: originalPost,
+                deleteSeq: deleteSeq
+            ))
+        }
+        return items
+    }
+
+    /// 내댓글 삭제 (op.php)
+    func deleteMyComment(itemId: String, seq: String) async throws {
+        let urlStr = "\(base)/mp/op.php?id=\(itemId)&seq=\(seq)&p=1&l=30&m=deleteDugoutList"
+        guard let url = URL(string: urlStr) else { throw MLBParkError.invalidURL }
+        var req = URLRequest(url: url)
+        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
+        req.setValue("\(base)/mp/dugout.php?source=mycomment", forHTTPHeaderField: "Referer")
+        let (data, resp) = try await session.data(for: req)
+        if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
+            throw MLBParkError.networkError("HTTP \(http.statusCode)")
+        }
+        let result = String(data: data, encoding: .utf8) ?? ""
+        if result.contains("error") || result.contains("fail") || result.contains("nologin") {
+            throw MLBParkError.networkError("삭제 실패")
+        }
+    }
+
+    /// 내게시글 삭제 (b.php board_DELETE)
+    func deleteMyPost(boardId: String, postId: String) async throws {
+        guard let url = URL(string: "\(base)/mp/b.php") else { throw MLBParkError.invalidURL }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
+        req.setValue("\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=view", forHTTPHeaderField: "Referer")
+        req.httpBody = "b=\(boardId)&id=\(postId)&m=board_DELETE".data(using: .utf8)
+        let (_, resp) = try await session.data(for: req)
+        if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
+            throw MLBParkError.networkError("HTTP \(http.statusCode)")
+        }
+    }
+
     // MARK: - 유틸
 
     private func extractParam(_ key: String, from path: String) -> String? {
