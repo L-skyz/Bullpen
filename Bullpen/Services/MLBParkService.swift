@@ -205,6 +205,12 @@ class MLBParkService {
     private func parsePostDetail(html: String, boardId: String, postId: String) throws -> PostDetail {
         let doc = try SwiftSoup.parse(html)
 
+        // 로그인 필요 감지 (19금/주번나 등 성인 게시물)
+        if html.contains("로그인이 필요합니다") || html.contains("로그인 후 이용") ||
+           html.contains("회원전용") || html.contains("login.php?gourl") {
+            throw MLBParkError.authRequired
+        }
+
         // 말머리: div.titles > a > span.word
         let titleEl = try doc.select("div.titles").first()
         let maemuri = try titleEl?.select("span.word").first()?.text() ?? ""

@@ -16,6 +16,7 @@ class AuthService: ObservableObject {
         config.httpShouldSetCookies = true
         config.httpCookieAcceptPolicy = .always
         session = URLSession(configuration: config)
+        restorePersistedCookies()
         checkLoginStatus()
     }
 
@@ -85,6 +86,7 @@ class AuthService: ObservableObject {
         }
 
         isLoggedIn = true
+        persistCookies()
     }
 
     // MARK: - 로그아웃
@@ -92,6 +94,7 @@ class AuthService: ObservableObject {
     func logout() {
         isLoggedIn = false
         nickname = ""
+        UserDefaults.standard.removeObject(forKey: "persistedCookies")
         if let cookies = HTTPCookieStorage.shared.cookies(for: URL(string: base)!) {
             cookies.forEach { HTTPCookieStorage.shared.deleteCookie($0) }
         }
@@ -115,6 +118,38 @@ class AuthService: ObservableObject {
             isLoggedIn = html.contains("로그아웃")
         } catch {
             isLoggedIn = false
+        }
+    }
+
+    // MARK: - 쿠키 영속화
+
+    private func persistCookies() {
+        let donga = URL(string: "https://mlbpark.donga.com")!
+        let all = HTTPCookieStorage.shared.cookies(for: donga) ?? []
+        let saved: [[String: String]] = all.compactMap { c in
+            guard !c.value.isEmpty, c.value != "deleted" else { return nil }
+            return ["name": c.name, "value": c.value,
+                    "domain": c.domain, "path": c.path]
+        }
+        UserDefaults.standard.set(saved, forKey: "persistedCookies")
+    }
+
+    private func restorePersistedCookies() {
+        guard let saved = UserDefaults.standard.array(forKey: "persistedCookies")
+                as? [[String: String]] else { return }
+        for dict in saved {
+            guard let name = dict["name"], let value = dict["value"],
+                  let domain = dict["domain"] else { continue }
+            let props: [HTTPCookiePropertyKey: Any] = [
+                .name:    name,
+                .value:   value,
+                .domain:  domain,
+                .path:    dict["path"] ?? "/",
+                .expires: Date(timeIntervalSinceNow: 30 * 24 * 60 * 60)
+            ]
+            if let cookie = HTTPCookie(properties: props) {
+                HTTPCookieStorage.shared.setCookie(cookie)
+            }
         }
     }
 

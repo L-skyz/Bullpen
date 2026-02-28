@@ -3,6 +3,10 @@ import UIKit
 
 private let drawerSpring = Animation.spring(response: 0.32, dampingFraction: 0.84)
 
+extension Notification.Name {
+    static let navigateToLogin = Notification.Name("navigateToLogin")
+}
+
 // 왼쪽 엣지(44pt)만 hitTest 통과, 나머지는 nil → 하위 뷰에 터치 전달
 final class LeftEdgeView: UIView {
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
@@ -96,6 +100,11 @@ struct ContentView: View {
                         Image(systemName: "list.bullet.rectangle")
                     }
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .navigateToLogin)) { _ in
+                navPath = NavigationPath()
+                showDrawer = false
+                section = .profile
             }
         }
     }

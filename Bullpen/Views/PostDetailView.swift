@@ -6,13 +6,16 @@ class PostDetailViewModel: ObservableObject {
     @Published var detail: PostDetail?
     @Published var isLoading = false
     @Published var error: String?
+    @Published var authRequired = false
     @Published var commentInput = ""
     @Published var isSubmittingComment = false
 
     func load(boardId: String, postId: String) async {
-        isLoading = true; error = nil
+        isLoading = true; error = nil; authRequired = false
         do {
             detail = try await MLBParkService.shared.fetchPostDetail(boardId: boardId, postId: postId)
+        } catch MLBParkError.authRequired {
+            authRequired = true
         } catch {
             self.error = error.localizedDescription
         }
@@ -143,6 +146,10 @@ struct PostDetailView: View {
                         Spacer(minLength: 40)
                     }
                 }
+            } else if vm.authRequired {
+                ContentUnavailableView("로그인이 필요합니다",
+                    systemImage: "lock.fill",
+                    description: Text("성인 콘텐츠는 로그인 후 이용할 수 있습니다."))
             } else if let err = vm.error {
                 ContentUnavailableView(err, systemImage: "exclamationmark.triangle")
             }
@@ -151,6 +158,11 @@ struct PostDetailView: View {
         .navigationBarBackButtonHidden(true)
         .background(SwipeBackEnabler())
         .task { await vm.load(boardId: boardId, postId: postId) }
+        .onChange(of: vm.authRequired) { _, required in
+            if required {
+                NotificationCenter.default.post(name: .navigateToLogin, object: nil)
+            }
+        }
     }
 
 }

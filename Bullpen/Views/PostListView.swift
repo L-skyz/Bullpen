@@ -35,10 +35,13 @@ class PostListViewModel: ObservableObject {
 
 struct PostListView: View {
     @Binding var board: Board
+    @EnvironmentObject var auth: AuthService
     @StateObject private var vm = PostListViewModel()
     @State private var selectedMaemuri = "전체"
     @State private var scrollPosition = ScrollPosition(idType: String.self)
     @State private var showSearch = false
+    @State private var showLoginAlert = false
+    @State private var pendingPost: Post? = nil
 
     private var maemurList: [String] {
         board.maemuri.isEmpty ? [] : ["전체"] + board.maemuri
@@ -52,7 +55,13 @@ struct PostListView: View {
             LazyVStack(spacing: 0) {
                 ForEach(vm.posts) { post in
                     VStack(spacing: 0) {
-                        NavigationLink(value: post) {
+                        Button {
+                            if isRestricted(post.maemuri) && !auth.isLoggedIn {
+                                showLoginAlert = true
+                            } else {
+                                pendingPost = post
+                            }
+                        } label: {
                             PostRowView(post: post)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
@@ -112,17 +121,29 @@ struct PostListView: View {
                 }
             }
         }
-        .navigationDestination(for: Post.self) { post in
+        .navigationDestination(item: $pendingPost) { post in
             PostDetailView(boardId: post.boardId, postId: post.id)
         }
         .navigationDestination(isPresented: $showSearch) {
             SearchView(boardId: board.id)
+        }
+        .alert("로그인이 필요합니다", isPresented: $showLoginAlert) {
+            Button("로그인") {
+                NotificationCenter.default.post(name: .navigateToLogin, object: nil)
+            }
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("성인 콘텐츠는 로그인 후 이용할 수 있습니다.")
         }
         .task(id: board.id) {
             selectedMaemuri = "전체"
             scrollPosition = ScrollPosition(idType: String.self)
             await vm.load(boardId: board.id, reset: true)
         }
+    }
+
+    private func isRestricted(_ maemuri: String) -> Bool {
+        maemuri.contains("17금") || maemuri.contains("19금") || maemuri.contains("주번나")
     }
 }
 
