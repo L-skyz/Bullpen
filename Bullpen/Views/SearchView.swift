@@ -3,9 +3,9 @@ import SwiftUI
 // MARK: - SearchScope
 
 enum SearchScope: String, CaseIterable, Hashable {
-    case title       = "subject"
-    case titleContent = "all"
-    case author      = "name"
+    case title       = "stt"   // 제목
+    case titleContent = "sct"  // 제목+내용
+    case author      = "swt"   // 닉네임
 
     var label: String {
         switch self {
