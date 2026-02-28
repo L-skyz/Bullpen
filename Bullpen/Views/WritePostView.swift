@@ -2,13 +2,23 @@ import SwiftUI
 
 struct WritePostView: View {
     @EnvironmentObject var auth: AuthService
-    @State private var selectedBoard = Board.all[0]
-    @State private var maemuri = ""
+
+    // 글쓰기 가능한 게시판만
+    private let writableBoards = Board.all.filter { $0.isWritable }
+
+    @State private var selectedBoard: Board
+    @State private var categoryId: String
     @State private var title = ""
     @State private var content = ""
     @State private var isSubmitting = false
     @State private var showSuccess = false
     @State private var errorMessage: String?
+
+    init() {
+        let first = Board.all.first(where: { $0.isWritable }) ?? Board.all[0]
+        _selectedBoard = State(initialValue: first)
+        _categoryId = State(initialValue: first.writeCategories.first?.id ?? "")
+    }
 
     var body: some View {
         Group {
@@ -22,22 +32,19 @@ struct WritePostView: View {
                 Form {
                     Section("게시판") {
                         Picker("게시판", selection: $selectedBoard) {
-                            ForEach(Board.all) { board in
+                            ForEach(writableBoards) { board in
                                 Text(board.name).tag(board)
                             }
                         }
                     }
 
-                    if !selectedBoard.maemuri.isEmpty {
-                        Section("말머리") {
-                            Picker("말머리", selection: $maemuri) {
-                                Text("없음").tag("")
-                                ForEach(selectedBoard.maemuri, id: \.self) { opt in
-                                    Text(opt).tag(opt)
-                                }
+                    Section("말머리 (필수)") {
+                        Picker("말머리", selection: $categoryId) {
+                            ForEach(selectedBoard.writeCategories) { cat in
+                                Text(cat.name).tag(cat.id)
                             }
-                            .pickerStyle(.menu)
                         }
+                        .pickerStyle(.menu)
                     }
 
                     Section("제목") {
@@ -57,28 +64,36 @@ struct WritePostView: View {
                 }
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("등록") { Task { await submit() } }
-                            .disabled(title.isEmpty || content.isEmpty || isSubmitting)
+                        if isSubmitting {
+                            ProgressView()
+                        } else {
+                            Button("등록") { Task { await submit() } }
+                                .disabled(title.isEmpty || content.isEmpty || categoryId.isEmpty)
+                        }
                     }
                 }
                 .alert("등록 완료", isPresented: $showSuccess) {
-                    Button("확인") { title = ""; content = ""; maemuri = "" }
+                    Button("확인") { title = ""; content = "" }
                 } message: {
                     Text("게시글이 등록되었습니다.")
                 }
             }
         }
-        .onChange(of: selectedBoard) { _, _ in maemuri = "" }
+        .onChange(of: selectedBoard) { _, newBoard in
+            // 게시판 변경 시 해당 게시판 첫 번째 말머리 자동 선택
+            categoryId = newBoard.writeCategories.first?.id ?? ""
+        }
         .navigationTitle("글쓰기")
         .navigationBarTitleDisplayMode(.inline)
     }
 
     private func submit() async {
-        isSubmitting = true; errorMessage = nil
+        isSubmitting = true
+        errorMessage = nil
         do {
             try await MLBParkService.shared.writePost(
                 boardId: selectedBoard.id,
-                maemuri: maemuri,
+                categoryId: categoryId,
                 title: title,
                 content: content
             )

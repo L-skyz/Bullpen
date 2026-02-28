@@ -92,9 +92,10 @@ class MLBParkService {
         return try parsePostList(html: html, boardId: boardId)
     }
 
-    /// 키워드 검색 (select: stt=제목, sct=제목+내용, swt=닉네임, spf=말머리)
+    /// 키워드 검색 (select: stt=제목, sct=제목+내용, swt=닉네임)
     func fetchPostsByKeyword(boardId: String, keyword: String, select: String = "stt", page: Int = 1) async throws -> [Post] {
-        let encoded = keyword.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? keyword
+        // 한글 검색어: CP949 바이트를 퍼센트 인코딩 (서버가 CP949 기대)
+        let encoded = percentEncodeCP949(keyword)
         let urlStr = "\(base)/mp/b.php?b=\(boardId)&m=search&select=\(select)&query=\(encoded)&p=\(page)"
         let html = try await fetch(urlStr)
         return try parsePostList(html: html, boardId: boardId, isSearch: true)
@@ -102,7 +103,7 @@ class MLBParkService {
 
     /// 말머리 필터 (서버사이드 검색 API 사용)
     func fetchPostsByMaemuri(boardId: String, maemuri: String, page: Int = 1) async throws -> [Post] {
-        let encoded = maemuri.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? maemuri
+        let encoded = percentEncodeCP949(maemuri)
         let urlStr = "\(base)/mp/b.php?search_select=sct&search_input=&select=spf&m=search&b=\(boardId)&query=\(encoded)&p=\(page)"
         let html = try await fetch(urlStr)
         return try parsePostList(html: html, boardId: boardId, isSearch: true)
@@ -256,30 +257,35 @@ class MLBParkService {
 
     // MARK: - 글쓰기
 
-    func writePost(boardId: String, maemuri: String, title: String, content: String) async throws {
+    func writePost(boardId: String, categoryId: String, title: String, content: String) async throws {
         guard let url = URL(string: "\(base)/mp/b.php") else { throw MLBParkError.invalidURL }
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
-        req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        // charset=EUC-KR 명시 → 서버가 올바른 인코딩으로 파싱
+        req.setValue("application/x-www-form-urlencoded; charset=EUC-KR", forHTTPHeaderField: "Content-Type")
         req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
         req.setValue("\(base)/mp/b.php?b=\(boardId)&m=write", forHTTPHeaderField: "Referer")
 
-        let params: [String: String] = [
-            "b":       boardId,
-            "m":       "write",
-            "maemuri": maemuri,
-            "subject": title,
-            "content": content,
-        ]
-        req.httpBody = params.urlEncoded.data(using: .utf8)
+        // 한글 필드(subject, content)를 CP949 바이트로 퍼센트 인코딩
+        req.httpBody = buildCP949Form([
+            "b":        boardId,
+            "m":        "board_INSERT",
+            "category": categoryId,
+            "subject":  title,
+            "content":  content,
+            "upimg":    "",
+            "info":     "",
+            "id":       "",
+        ])
 
         let (data, resp) = try await session.data(for: req)
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
-        let body = String(data: data, encoding: .utf8) ?? ""
-        if body.contains("로그인") || body.contains("fail") {
+        let body = String(data: data, encoding: Self.cp949)
+            ?? String(data: data, encoding: .utf8) ?? ""
+        if body.contains("로그인") || body.contains("실패") {
             throw MLBParkError.networkError("글쓰기 실패. 로그인 상태를 확인하세요.")
         }
     }
@@ -291,12 +297,12 @@ class MLBParkService {
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
-        req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/x-www-form-urlencoded; charset=EUC-KR", forHTTPHeaderField: "Content-Type")
         req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
         req.setValue("\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=view", forHTTPHeaderField: "Referer")
         req.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
 
-        let params: [String: String] = [
+        req.httpBody = buildCP949Form([
             "m":       "reply_INSERT",
             "b":       boardId,
             "id":      postId,
@@ -304,8 +310,7 @@ class MLBParkService {
             "source":  "",
             "info":    "",
             "content": content,
-        ]
-        req.httpBody = params.urlEncoded.data(using: .utf8)
+        ])
 
         let (_, resp) = try await session.data(for: req)
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
@@ -323,14 +328,34 @@ class MLBParkService {
         else { return nil }
         return item.value
     }
-}
 
-extension Dictionary where Key == String, Value == String {
-    var urlEncoded: String {
-        map { k, v in
-            let ek = k.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? k
-            let ev = v.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? v
+    /// 폼 파라미터를 CP949로 인코딩한 Data 반환 (한글 깨짐 방지)
+    private func buildCP949Form(_ params: [String: String]) -> Data {
+        let safe = CharacterSet.alphanumerics.union(.init(charactersIn: "-._~"))
+        let body = params.map { key, value in
+            let ek = key.addingPercentEncoding(withAllowedCharacters: safe) ?? key
+            let ev = percentEncodeCP949(value)
             return "\(ek)=\(ev)"
         }.joined(separator: "&")
+        // 퍼센트 인코딩 후 남은 문자는 ASCII이므로 .ascii로 안전하게 변환
+        return body.data(using: .ascii) ?? Data()
+    }
+
+    /// 문자열을 CP949 바이트로 변환 후 퍼센트 인코딩
+    private func percentEncodeCP949(_ value: String) -> String {
+        guard let data = value.data(using: Self.cp949) else {
+            return value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
+        }
+        let safe = CharacterSet.alphanumerics.union(.init(charactersIn: "-._~"))
+        var result = ""
+        for byte in data {
+            let scalar = Unicode.Scalar(byte)
+            if safe.contains(scalar) {
+                result.append(Character(scalar))
+            } else {
+                result += String(format: "%%%02X", byte)
+            }
+        }
+        return result
     }
 }

@@ -4,14 +4,12 @@ enum SearchScope: String, CaseIterable {
     case title     = "stt"
     case titleBody = "sct"
     case nickname  = "swt"
-    case maemuri   = "spf"
 
     var label: String {
         switch self {
         case .title:     return "제목"
         case .titleBody: return "제목+내용"
         case .nickname:  return "닉네임"
-        case .maemuri:   return "말머리"
         }
     }
     var prompt: String {
@@ -19,7 +17,6 @@ enum SearchScope: String, CaseIterable {
         case .title:     return "제목 검색"
         case .titleBody: return "제목+내용 검색"
         case .nickname:  return "닉네임 검색"
-        case .maemuri:   return "말머리 검색"
         }
     }
 }
@@ -27,10 +24,15 @@ enum SearchScope: String, CaseIterable {
 @MainActor
 class PostListViewModel: ObservableObject {
     @Published var posts: [Post] = []
+    @Published var searchResults: [Post] = []
     @Published var isLoading = false
+    @Published var isSearching = false
     @Published var error: String?
+    @Published var searchError: String?
     @Published var hasMore = true
+    @Published var hasMoreSearch = true
     private var page = 1
+    private var searchPage = 1
 
     func load(boardId: String, maemuri: String? = nil, keyword: String? = nil, searchSelect: String = "stt", reset: Bool = false) async {
         let startPage = reset ? 1 : page
@@ -47,19 +49,44 @@ class PostListViewModel: ObservableObject {
             } else {
                 newPosts = try await MLBParkService.shared.fetchPosts(boardId: boardId, page: startPage)
             }
-            // 성공 후에만 posts 초기화 → pull-to-refresh 백지 방지
             if reset { posts = [] }
             page = startPage + 1
             if newPosts.isEmpty { hasMore = false }
             posts.append(contentsOf: newPosts)
         } catch is CancellationError {
-            // 취소는 정상 (refreshable/task 전환 시)
         } catch let urlError as URLError where urlError.code == .cancelled {
-            // URLSession 취소도 정상
         } catch {
             self.error = error.localizedDescription
         }
         isLoading = false
+    }
+
+    func search(boardId: String, keyword: String, select: String, reset: Bool = false) async {
+        let startPage = reset ? 1 : searchPage
+        if reset { hasMoreSearch = true }
+        guard hasMoreSearch else { return }
+        isSearching = true
+        searchError = nil
+        do {
+            let newPosts = try await MLBParkService.shared.fetchPostsByKeyword(
+                boardId: boardId, keyword: keyword, select: select, page: startPage)
+            if reset { searchResults = [] }
+            searchPage = startPage + 1
+            if newPosts.isEmpty { hasMoreSearch = false }
+            searchResults.append(contentsOf: newPosts)
+        } catch is CancellationError {
+        } catch let urlError as URLError where urlError.code == .cancelled {
+        } catch {
+            self.searchError = error.localizedDescription
+        }
+        isSearching = false
+    }
+
+    func clearSearch() {
+        searchResults = []
+        searchPage = 1
+        hasMoreSearch = true
+        searchError = nil
     }
 }
 
@@ -83,38 +110,90 @@ struct PostListView: View {
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(vm.posts) { post in
-                    VStack(spacing: 0) {
-                        NavigationLink(value: post) {
-                            PostRowView(post: post)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
+        ZStack(alignment: .top) {
+            // ── 일반 게시글 목록 ──
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(vm.posts) { post in
+                        VStack(spacing: 0) {
+                            NavigationLink(value: post) {
+                                PostRowView(post: post)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                            }
+                            .buttonStyle(.plain)
+                            Divider().padding(.leading, 44)
                         }
-                        .buttonStyle(.plain)
-
-                        Divider().padding(.leading, 44)
-                    }
-                    .id(post.id)
-                    .onAppear {
-                        if post.id == vm.posts.last?.id {
-                            Task { await vm.load(boardId: board.id, maemuri: activeMaemuri, keyword: activeKeyword, searchSelect: searchScope.rawValue) }
+                        .id(post.id)
+                        .onAppear {
+                            if post.id == vm.posts.last?.id {
+                                Task { await vm.load(boardId: board.id, maemuri: activeMaemuri) }
+                            }
                         }
                     }
-                }
-
-                if vm.isLoading {
-                    HStack { Spacer(); ProgressView(); Spacer() }
-                        .padding()
-                }
-                if let err = vm.error {
-                    Text(err).foregroundColor(.red).font(.caption)
-                        .padding()
+                    if vm.isLoading {
+                        HStack { Spacer(); ProgressView(); Spacer() }.padding()
+                    }
+                    if let err = vm.error {
+                        Text(err).foregroundColor(.red).font(.caption).padding()
+                    }
                 }
             }
+            .scrollPosition($scrollPosition)
+            .refreshable {
+                scrollPosition = ScrollPosition(idType: String.self)
+                await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true)
+            }
+
+            // ── 검색 결과 오버레이 (흰 배경) ──
+            if activeKeyword != nil {
+                Color(.systemBackground)
+                    .ignoresSafeArea()
+
+                Group {
+                    if vm.searchResults.isEmpty && !vm.isSearching {
+                        VStack(spacing: 12) {
+                            Image(systemName: "doc.text.magnifyingglass")
+                                .font(.system(size: 48))
+                                .foregroundColor(.secondary)
+                            Text("검색 결과가 없습니다")
+                                .foregroundColor(.secondary)
+                            if let err = vm.searchError {
+                                Text(err).font(.caption).foregroundColor(.red)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        List {
+                            ForEach(vm.searchResults) { post in
+                                NavigationLink(value: post) {
+                                    PostRowView(post: post)
+                                }
+                                .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                                .listRowBackground(Color(.systemBackground))
+                                .onAppear {
+                                    if post.id == vm.searchResults.last?.id, let kw = activeKeyword {
+                                        Task { await vm.search(boardId: board.id, keyword: kw, select: searchScope.rawValue) }
+                                    }
+                                }
+                            }
+                            if vm.isSearching {
+                                HStack { Spacer(); ProgressView(); Spacer() }
+                                    .listRowBackground(Color(.systemBackground))
+                            }
+                            if let err = vm.searchError {
+                                Text(err).font(.caption).foregroundColor(.red)
+                                    .listRowBackground(Color(.systemBackground))
+                            }
+                        }
+                        .listStyle(.plain)
+                        .background(Color(.systemBackground))
+                    }
+                }
+                .transition(.opacity)
+            }
         }
-        .scrollPosition($scrollPosition)
+        .animation(.easeInOut(duration: 0.18), value: activeKeyword != nil)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -123,16 +202,18 @@ struct PostListView: View {
                 }
             }
             ToolbarItem(placement: .principal) {
-                if !maemurList.isEmpty {
+                if activeKeyword != nil {
+                    // 검색 중일 때: 결과 카운트 표시
+                    Text("검색 결과 \(vm.searchResults.count)건")
+                        .font(.headline).fontWeight(.semibold)
+                } else if !maemurList.isEmpty {
                     Menu {
                         ForEach(maemurList, id: \.self) { m in
                             Button {
                                 if m != selectedMaemuri {
                                     selectedMaemuri = m
                                     scrollPosition = ScrollPosition(idType: String.self)
-                                    Task {
-                                        await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true)
-                                    }
+                                    Task { await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true) }
                                 }
                             } label: {
                                 if m == selectedMaemuri {
@@ -144,9 +225,7 @@ struct PostListView: View {
                         }
                     } label: {
                         HStack(spacing: 3) {
-                            Text(selectedMaemuri == "전체"
-                                 ? board.name
-                                 : "\(board.name) · \(selectedMaemuri)")
+                            Text(selectedMaemuri == "전체" ? board.name : "\(board.name) · \(selectedMaemuri)")
                                 .font(.headline).fontWeight(.semibold)
                                 .foregroundColor(.primary)
                             Image(systemName: "chevron.down")
@@ -171,29 +250,30 @@ struct PostListView: View {
         }
         .onSubmit(of: .search) {
             let kw = searchText.trimmingCharacters(in: .whitespaces)
-            activeKeyword = kw.isEmpty ? nil : kw
-            scrollPosition = ScrollPosition(idType: String.self)
-            Task { await vm.load(boardId: board.id, keyword: activeKeyword, searchSelect: searchScope.rawValue, reset: true) }
-        }
-        .onChange(of: searchText) { _, new in
-            if new.isEmpty {
-                activeKeyword = nil
-                scrollPosition = ScrollPosition(idType: String.self)
-                Task { await vm.load(boardId: board.id, maemuri: selectedMaemuri == "전체" ? nil : selectedMaemuri, reset: true) }
-            }
+            guard !kw.isEmpty else { return }
+            activeKeyword = kw
+            vm.clearSearch()
+            Task { await vm.search(boardId: board.id, keyword: kw, select: searchScope.rawValue, reset: true) }
         }
         .onChange(of: searchScope) { _, _ in
-            if activeKeyword != nil {
-                scrollPosition = ScrollPosition(idType: String.self)
-                Task { await vm.load(boardId: board.id, keyword: activeKeyword, searchSelect: searchScope.rawValue, reset: true) }
+            if let kw = activeKeyword {
+                vm.clearSearch()
+                Task { await vm.search(boardId: board.id, keyword: kw, select: searchScope.rawValue, reset: true) }
             }
         }
         .onChange(of: isSearchPresented) { _, presented in
-            if !presented && activeKeyword != nil {
+            if !presented {
+                // 검색 바 닫힘 → 검색 결과 해제
                 searchText = ""
                 activeKeyword = nil
-                scrollPosition = ScrollPosition(idType: String.self)
-                Task { await vm.load(boardId: board.id, maemuri: selectedMaemuri == "전체" ? nil : selectedMaemuri, reset: true) }
+                vm.clearSearch()
+            }
+        }
+        .onChange(of: searchText) { _, new in
+            // 검색어 지우면 결과도 클리어
+            if new.isEmpty && activeKeyword != nil {
+                activeKeyword = nil
+                vm.clearSearch()
             }
         }
         .task(id: board.id) {
@@ -202,11 +282,8 @@ struct PostListView: View {
             activeKeyword = nil
             searchScope = .title
             scrollPosition = ScrollPosition(idType: String.self)
+            vm.clearSearch()
             await vm.load(boardId: board.id, reset: true)
-        }
-        .refreshable {
-            scrollPosition = ScrollPosition(idType: String.self)
-            await vm.load(boardId: board.id, maemuri: activeMaemuri, keyword: activeKeyword, searchSelect: searchScope.rawValue, reset: true)
         }
     }
 }
