@@ -52,14 +52,16 @@ class PostDetailViewModel: ObservableObject {
     }
 
     func editPost(boardId: String, postId: String, categoryId: String,
-                  title: String, content: String) async {
+                  title: String, content: String) async -> Bool {
         do {
             try await MLBParkService.shared.editPost(boardId: boardId, postId: postId,
                                                      categoryId: categoryId,
                                                      title: title, content: content)
             await load(boardId: boardId, postId: postId)
+            return true
         } catch {
             actionError = error.localizedDescription
+            return false
         }
     }
 
@@ -120,6 +122,14 @@ struct PostDetailView: View {
         return auth.isLoggedIn && !auth.nickname.isEmpty && d.author == auth.nickname
     }
 
+    private var currentBoard: Board? {
+        Board.all.first(where: { $0.id == boardId })
+    }
+
+    private var editCategories: [BoardCategory] {
+        currentBoard?.writeCategories ?? []
+    }
+
     var body: some View {
         Group {
             if vm.isLoading {
@@ -170,7 +180,7 @@ struct PostDetailView: View {
                                         Button("수정") {
                                             editTitle      = d.title
                                             editContent    = stripHTML(d.contentHTML)
-                                            editCategoryId = d.maemuri
+                                            editCategoryId = resolveCategoryId(from: d.maemuri)
                                             showEditPost   = true
                                         }
                                         Button("삭제", role: .destructive) {
@@ -296,14 +306,16 @@ struct PostDetailView: View {
         // 게시글 수정 시트
         .sheet(isPresented: $showEditPost) {
             EditPostSheet(
+                categoryId: $editCategoryId,
+                categories: editCategories,
                 title: $editTitle,
                 content: $editContent
             ) {
                 Task {
-                    await vm.editPost(boardId: boardId, postId: postId,
-                                     categoryId: editCategoryId,
-                                     title: editTitle, content: editContent)
-                    showEditPost = false
+                    let ok = await vm.editPost(boardId: boardId, postId: postId,
+                                               categoryId: editCategoryId,
+                                               title: editTitle, content: editContent)
+                    if ok { showEditPost = false }
                 }
             }
         }
@@ -316,6 +328,25 @@ struct PostDetailView: View {
         } message: {
             Text(vm.actionError ?? "")
         }
+    }
+
+    private func resolveCategoryId(from maemuri: String) -> String {
+        guard let board = currentBoard else { return "" }
+        if let exact = board.writeCategories.first(where: { $0.name == maemuri }) {
+            return exact.id
+        }
+
+        let normalized = normalizeCategoryName(maemuri)
+        if let match = board.writeCategories.first(where: { normalizeCategoryName($0.name) == normalized }) {
+            return match.id
+        }
+        return board.writeCategories.first?.id ?? ""
+    }
+
+    private func normalizeCategoryName(_ value: String) -> String {
+        value.lowercased()
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "/", with: "")
     }
 
     private func stripHTML(_ html: String) -> String {
@@ -377,6 +408,8 @@ struct EditCommentSheet: View {
 // MARK: - 게시글 수정 시트
 
 struct EditPostSheet: View {
+    @Binding var categoryId: String
+    let categories: [BoardCategory]
     @Binding var title: String
     @Binding var content: String
     let onSubmit: () -> Void
@@ -385,6 +418,16 @@ struct EditPostSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                if !categories.isEmpty {
+                    Section("말머리") {
+                        Picker("말머리", selection: $categoryId) {
+                            ForEach(categories) { c in
+                                Text(c.name).tag(c.id)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+                }
                 Section("제목") {
                     TextField("제목", text: $title)
                 }
@@ -404,7 +447,13 @@ struct EditPostSheet: View {
                         onSubmit()
                     }
                     .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty ||
-                              content.trimmingCharacters(in: .whitespaces).isEmpty)
+                              content.trimmingCharacters(in: .whitespaces).isEmpty ||
+                              (!categories.isEmpty && categoryId.isEmpty))
+                }
+            }
+            .onAppear {
+                if categoryId.isEmpty {
+                    categoryId = categories.first?.id ?? ""
                 }
             }
         }

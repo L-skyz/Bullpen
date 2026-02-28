@@ -314,14 +314,12 @@ class MLBParkService {
             "id":       "",
         ])
 
-        let (data, resp) = try await session.data(for: req)
+        let (_, resp) = try await session.data(for: req)
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
-        let body = Self.decodeCP949(data) ?? String(data: data, encoding: .utf8) ?? ""
-        if body.contains("로그인") || body.contains("실패") {
-            throw MLBParkError.networkError("글쓰기 실패. 로그인 상태를 확인하세요.")
-        }
+        // 성공 응답 HTML에도 "로그인"/"nologin" 문자열이 포함되어 오탐 가능
+        // → HTTP 상태 코드 기준으로만 실패 판정
     }
 
     // MARK: - 댓글쓰기
@@ -536,6 +534,15 @@ class MLBParkService {
     /// 게시글 수정 (게시글 상세에서 호출 — b.php board_UPDATE)
     func editPost(boardId: String, postId: String, categoryId: String,
                   title: String, content: String) async throws {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty, !trimmedContent.isEmpty else {
+            throw MLBParkError.networkError("제목과 내용을 입력해주세요.")
+        }
+        guard !categoryId.isEmpty else {
+            throw MLBParkError.networkError("말머리를 선택해주세요.")
+        }
+
         guard let url = URL(string: "\(base)/mp/b.php") else { throw MLBParkError.invalidURL }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -547,19 +554,17 @@ class MLBParkService {
             "m":        "board_UPDATE",
             "id":       postId,
             "category": categoryId,
-            "subject":  title,
-            "content":  content,
+            "subject":  trimmedTitle,
+            "content":  trimmedContent,
             "upimg":    "",
             "info":     "",
         ])
-        let (data, resp) = try await session.data(for: req)
+        let (_, resp) = try await session.data(for: req)
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
-        let body = Self.decodeCP949(data) ?? String(data: data, encoding: .utf8) ?? ""
-        if body.contains("nologin") || body.contains("권한이 없") || body.contains("실패") {
-            throw MLBParkError.networkError("게시글 수정 실패. 로그인 상태를 확인하세요.")
-        }
+        // board_UPDATE 응답 HTML에 "nologin"/"로그인" 스크립트 문자열이 공존해 오탐 가능
+        // → HTTP 상태 코드 기준으로만 실패 판정
     }
 
     // MARK: - 더그아웃 (내게시글 / 내댓글)
