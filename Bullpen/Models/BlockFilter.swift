@@ -1,12 +1,13 @@
 import Foundation
 
-/// 키워드/닉네임 차단 필터 (로컬 UserDefaults 저장)
+/// 키워드/닉네임/말머리 차단 필터 (로컬 UserDefaults 저장)
 @MainActor
 class BlockFilter: ObservableObject {
     static let shared = BlockFilter()
 
     @Published var blockedKeywords: [String] = []
     @Published var blockedNicknames: [String] = []
+    @Published var blockedMaemuri: [String] = []
 
     private init() { load() }
 
@@ -38,10 +39,25 @@ class BlockFilter: ObservableObject {
         save()
     }
 
+    // MARK: - 말머리
+
+    func addMaemuri(_ m: String) {
+        let m = m.trimmingCharacters(in: .whitespaces)
+        guard !m.isEmpty, !blockedMaemuri.contains(m) else { return }
+        blockedMaemuri.append(m)
+        save()
+    }
+
+    func removeMaemuri(at offsets: IndexSet) {
+        blockedMaemuri.remove(atOffsets: offsets)
+        save()
+    }
+
     // MARK: - 판별
 
     func isBlocked(_ post: Post) -> Bool {
         if blockedNicknames.contains(post.author) { return true }
+        if !post.maemuri.isEmpty && blockedMaemuri.contains(post.maemuri) { return true }
         for kw in blockedKeywords where !kw.isEmpty {
             if post.title.localizedCaseInsensitiveContains(kw) { return true }
         }
@@ -53,10 +69,12 @@ class BlockFilter: ObservableObject {
     private func save() {
         UserDefaults.standard.set(blockedKeywords, forKey: "blockedKeywords")
         UserDefaults.standard.set(blockedNicknames, forKey: "blockedNicknames")
+        UserDefaults.standard.set(blockedMaemuri,   forKey: "blockedMaemuri")
     }
 
     private func load() {
         blockedKeywords  = UserDefaults.standard.stringArray(forKey: "blockedKeywords")  ?? []
         blockedNicknames = UserDefaults.standard.stringArray(forKey: "blockedNicknames") ?? []
+        blockedMaemuri   = UserDefaults.standard.stringArray(forKey: "blockedMaemuri")   ?? []
     }
 }

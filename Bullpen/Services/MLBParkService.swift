@@ -425,16 +425,28 @@ class MLBParkService {
         req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
         req.setValue("\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=view", forHTTPHeaderField: "Referer")
         req.httpBody = "b=\(boardId)&id=\(postId)&m=board_DELETE".data(using: .utf8)
-        let (_, resp) = try await session.data(for: req)
+        let (data, resp) = try await session.data(for: req)
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
+        }
+        let result = Self.decodeCP949(data) ?? String(data: data, encoding: .utf8) ?? ""
+        if result.contains("nologin") || result.contains("권한이 없") || result.contains("실패") {
+            throw MLBParkError.networkError("게시글 삭제 실패. 로그인 상태를 확인하세요.")
         }
     }
 
     // MARK: - 유틸
 
     private func extractParam(_ key: String, from path: String) -> String? {
-        let urlStr = path.hasPrefix("http") ? path : "\(base)/\(path)"
+        // /mp/b.php?... 형태(슬래시 시작 상대경로)는 base + path, 그 외 상대경로는 base/path
+        let urlStr: String
+        if path.hasPrefix("http") {
+            urlStr = path
+        } else if path.hasPrefix("/") {
+            urlStr = "\(base)\(path)"
+        } else {
+            urlStr = "\(base)/\(path)"
+        }
         guard let url = URL(string: urlStr),
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let item = components.queryItems?.first(where: { $0.name == key })

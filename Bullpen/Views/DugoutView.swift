@@ -57,15 +57,20 @@ struct DugoutView: View {
     @State private var editMode: EditMode = .inactive
     @State private var selectedIds: Set<String> = []
     @State private var confirmBulkDelete = false
+    @State private var navigateItem: DugoutItem? = nil
 
     private var navTitle: String { source == "my" ? "내 게시글" : "내 댓글" }
 
     var body: some View {
         List(selection: $selectedIds) {
             ForEach(vm.items) { item in
-                NavigationLink(destination: PostDetailView(boardId: item.boardId, postId: item.originalPostId)) {
+                Button {
+                    navigateItem = item
+                } label: {
                     DugoutItemRow(item: item)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     Button(role: .destructive) {
                         Task { await vm.delete(item) }
@@ -99,6 +104,9 @@ struct DugoutView: View {
         }
         .listStyle(.plain)
         .environment(\.editMode, $editMode)
+        .navigationDestination(item: $navigateItem) { item in
+            PostDetailView(boardId: item.boardId, postId: item.originalPostId)
+        }
         .navigationTitle(navTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

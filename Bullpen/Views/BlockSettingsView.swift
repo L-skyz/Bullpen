@@ -3,15 +3,42 @@ import SwiftUI
 // MARK: - BlockType
 
 enum BlockType {
-    case keyword, nickname
+    case keyword, nickname, maemuri
 
-    var navTitle: String  { self == .keyword ? "키워드 차단" : "닉네임 차단" }
-    var placeholder: String { self == .keyword ? "차단할 키워드 입력" : "차단할 닉네임 입력" }
-    var emptyMessage: String { self == .keyword ? "차단된 키워드가 없습니다" : "차단된 닉네임이 없습니다" }
+    var navTitle: String {
+        switch self {
+        case .keyword:  return "키워드 차단"
+        case .nickname: return "닉네임 차단"
+        case .maemuri:  return "말머리 차단"
+        }
+    }
+    var placeholder: String {
+        switch self {
+        case .keyword:  return "차단할 키워드 입력"
+        case .nickname: return "차단할 닉네임 입력"
+        case .maemuri:  return "차단할 말머리 입력 (예: 공지, 질문)"
+        }
+    }
+    var emptyMessage: String {
+        switch self {
+        case .keyword:  return "차단된 키워드가 없습니다"
+        case .nickname: return "차단된 닉네임이 없습니다"
+        case .maemuri:  return "차단된 말머리가 없습니다"
+        }
+    }
     var hint: String {
-        self == .keyword
-            ? "해당 단어가 제목에 포함된 게시글을 숨깁니다"
-            : "해당 닉네임의 게시글을 숨깁니다"
+        switch self {
+        case .keyword:  return "해당 단어가 제목에 포함된 게시글을 숨깁니다"
+        case .nickname: return "해당 닉네임의 게시글을 숨깁니다"
+        case .maemuri:  return "해당 말머리가 붙은 게시글을 숨깁니다 (정확히 일치)"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .keyword:  return "text.badge.xmark"
+        case .nickname: return "person.slash"
+        case .maemuri:  return "tag.slash"
+        }
     }
 }
 
@@ -25,7 +52,11 @@ struct BlockSettingsView: View {
     @FocusState private var inputFocused: Bool
 
     private var items: [String] {
-        type == .keyword ? filter.blockedKeywords : filter.blockedNicknames
+        switch type {
+        case .keyword:  return filter.blockedKeywords
+        case .nickname: return filter.blockedNicknames
+        case .maemuri:  return filter.blockedMaemuri
+        }
     }
 
     var body: some View {
@@ -58,15 +89,18 @@ struct BlockSettingsView: View {
                 } else {
                     ForEach(items, id: \.self) { item in
                         HStack {
-                            Image(systemName: type == .keyword ? "text.badge.xmark" : "person.slash")
+                            Image(systemName: type.icon)
                                 .foregroundColor(.red)
                                 .font(.subheadline)
                             Text(item)
                         }
                     }
                     .onDelete { offsets in
-                        if type == .keyword { filter.removeKeyword(at: offsets) }
-                        else               { filter.removeNickname(at: offsets) }
+                        switch type {
+                        case .keyword:  filter.removeKeyword(at: offsets)
+                        case .nickname: filter.removeNickname(at: offsets)
+                        case .maemuri:  filter.removeMaemuri(at: offsets)
+                        }
                     }
                 }
             } header: {
@@ -87,8 +121,11 @@ struct BlockSettingsView: View {
     private func addItem() {
         let text = newText.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return }
-        if type == .keyword { filter.addKeyword(text) }
-        else               { filter.addNickname(text) }
+        switch type {
+        case .keyword:  filter.addKeyword(text)
+        case .nickname: filter.addNickname(text)
+        case .maemuri:  filter.addMaemuri(text)
+        }
         newText = ""
         inputFocused = false
     }

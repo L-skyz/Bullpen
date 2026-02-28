@@ -35,6 +35,16 @@ struct ProfileView: View {
 
             // ── 차단 설정 ──
             Section("차단 설정") {
+                NavigationLink(destination: BlockSettingsView(type: .maemuri)) {
+                    HStack {
+                        Label("말머리 차단", systemImage: "tag.slash")
+                        Spacer()
+                        if !filter.blockedMaemuri.isEmpty {
+                            Text("\(filter.blockedMaemuri.count)")
+                                .font(.caption).foregroundColor(.secondary)
+                        }
+                    }
+                }
                 NavigationLink(destination: BlockSettingsView(type: .keyword)) {
                     HStack {
                         Label("키워드 차단", systemImage: "text.badge.xmark")
