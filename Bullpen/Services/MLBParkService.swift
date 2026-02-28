@@ -434,32 +434,80 @@ class MLBParkService {
     // MARK: - 댓글 수정 (게시글 상세)
 
     func editComment(boardId: String, postId: String, commentSeq: String, content: String) async throws {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw MLBParkError.networkError("댓글 내용을 입력해주세요.")
+        }
+        guard trimmed.count <= 300 else {
+            throw MLBParkError.networkError("댓글은 300자 이하로 입력해주세요.")
+        }
+        guard !commentSeq.isEmpty else {
+            throw MLBParkError.networkError("수정할 댓글 식별값이 비어 있습니다. 새로고침 후 다시 시도해주세요.")
+        }
+
         guard let url = URL(string: "\(base)/mp/action.php") else { throw MLBParkError.invalidURL }
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
-        req.setValue("application/x-www-form-urlencoded; charset=EUC-KR", forHTTPHeaderField: "Content-Type")
+        // 웹 수정 폼 serialize()와 동일하게 UTF-8 전송
+        req.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
         req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
         req.setValue("\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=view", forHTTPHeaderField: "Referer")
         req.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
 
-        req.httpBody = buildCP949Form([
+        req.httpBody = buildUTF8Form([
             "m":       "reply_UPDATE",
             "b":       boardId,
             "id":      postId,
             "prid":    "",
             "source":  "",
             "info":    "{\"replyId\":\"\(commentSeq)\"}",
-            "content": content,
+            "content": trimmed,
         ])
 
         let (data, resp) = try await session.data(for: req)
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
-        let body = String(data: data, encoding: .utf8) ?? ""
-        if body.contains("nologin") || body.contains("error") {
-            throw MLBParkError.networkError("댓글 수정 실패")
+
+        let result = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        switch result {
+        case "ok":
+            return
+        case "notfound":
+            throw MLBParkError.networkError("존재하지 않는 게시물입니다.")
+        case "nologin":
+            throw MLBParkError.networkError("로그인 후 이용해주세요.")
+        case "reallogin":
+            throw MLBParkError.networkError("2군 회원은 댓글 수정이 제한됩니다.")
+        case "null":
+            throw MLBParkError.networkError("댓글 내용을 입력해주세요.")
+        case "deleted":
+            throw MLBParkError.networkError("기기 시간을 현재 시간으로 맞춘 후 다시 시도해주세요.")
+        case "permission":
+            throw MLBParkError.networkError("댓글 수정 권한이 없습니다.")
+        case "lowlevel":
+            throw MLBParkError.networkError("회원 가입 후 7일이 지나야 댓글 수정이 가능합니다.")
+        case "over":
+            throw MLBParkError.networkError("동일한 내용의 댓글은 등록할 수 없습니다.")
+        case "fail":
+            throw MLBParkError.networkError("댓글 수정 중 오류가 발생했습니다.")
+        case "ip":
+            throw MLBParkError.networkError("해당 아이피는 차단된 상태입니다.")
+        case "rpDeleted":
+            throw MLBParkError.networkError("이미 삭제된 댓글입니다.")
+        case "rpMaxdepth":
+            throw MLBParkError.networkError("댓글은 최대 3단계까지만 작성할 수 있습니다.")
+        case "rpMaxLength":
+            throw MLBParkError.networkError("댓글 글자 수 제한(300자)을 초과했습니다.")
+        case "rpNotFound":
+            throw MLBParkError.networkError("수정할 댓글을 찾을 수 없습니다.")
+        case "":
+            throw MLBParkError.networkError("댓글 수정 실패(빈 응답).")
+        default:
+            throw MLBParkError.networkError("댓글 수정 실패: \(result)")
         }
     }
 

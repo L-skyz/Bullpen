@@ -74,9 +74,18 @@ class PostDetailViewModel: ObservableObject {
     }
 
     func editComment(boardId: String, postId: String, comment: Comment, newContent: String) async {
+        let trimmed = newContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            actionError = "댓글 내용을 입력해주세요."
+            return
+        }
+        guard trimmed.count <= 300 else {
+            actionError = "댓글은 300자 이하로 입력해주세요."
+            return
+        }
         do {
             try await MLBParkService.shared.editComment(boardId: boardId, postId: postId,
-                                                        commentSeq: comment.seq, content: newContent)
+                                                        commentSeq: comment.seq, content: trimmed)
             await load(boardId: boardId, postId: postId)
         } catch {
             actionError = error.localizedDescription
@@ -354,7 +363,10 @@ struct EditCommentSheet: View {
                         onSubmit()
                         dismiss()
                     }
-                    .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(
+                        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                        text.trimmingCharacters(in: .whitespacesAndNewlines).count > 300
+                    )
                 }
             }
             .onAppear { focused = true }
