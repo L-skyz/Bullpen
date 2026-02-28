@@ -243,25 +243,29 @@ class MLBParkService {
         // 본문: div.ar_txt (사이드바/광고 제외한 순수 본문)
         let contentHTML = try doc.select("div.ar_txt").first()?.html() ?? ""
 
-        // 댓글: .reply_list .other_reply
-        // parent() = DIV#reply_{seq}.other_con 또는 .my_con (내 댓글)
+        // 댓글: reply row(div#reply_{seq}) 기준으로 파싱
+        // 내 댓글은 my_con/my_reply, 타인 댓글은 other_con/other_reply 변형이 있어
+        // row 단위로 잡아야 누락이 없다.
         var comments: [Comment] = []
-        let commentEls = try doc.select(".reply_list .other_reply")
-        for (i, el) in commentEls.enumerated() {
-            let nick   = try el.select("span.name").first()?.text() ?? ""
+        let commentRows = try doc.select(".reply_list div[id^=reply_]")
+        for (i, row) in commentRows.enumerated() {
+            guard let bodyEl = try row.select(".other_reply, .my_reply").first() else { continue }
+
+            let nick   = try bodyEl.select("span.name").first()?.text() ?? ""
             guard !nick.isEmpty else { continue }
-            let avatar = try el.parent()?.select("span.photo img").first()?.attr("src") ?? ""
-            let cDate  = try el.select("span.date").first()?.text() ?? ""
-            let ip     = try el.select("span.ip").first()?.text() ?? ""
-            let text   = try el.select("span.re_txt").first()?.text() ?? ""
+            let avatar = try row.select("span.photo img").first()?.attr("src") ?? ""
+            let cDate  = try bodyEl.select("span.date").first()?.text() ?? ""
+            let ip     = try bodyEl.select("span.ip").first()?.text() ?? ""
+            let text   = try bodyEl.select("span.re_txt").first()?.text() ?? ""
 
-            // seq: parent div id = "reply_{seq}"
-            let parentId  = (try? el.parent()?.attr("id")) ?? ""
-            let seq       = parentId.hasPrefix("reply_") ? String(parentId.dropFirst(6)) : ""
+            // seq: row id = "reply_{seq}"
+            let rowId = (try? row.attr("id")) ?? ""
+            let seq   = rowId.hasPrefix("reply_") ? String(rowId.dropFirst(6)) : ""
 
-            // 내 댓글 여부: parent class에 "my_con" 포함
-            let parentCls = (try? el.parent()?.attr("class")) ?? ""
-            let isOwn     = parentCls.contains("my_con")
+            // 내 댓글 여부: row/body class 둘 다 확인
+            let rowCls  = (try? row.attr("class")) ?? ""
+            let bodyCls = (try? bodyEl.attr("class")) ?? ""
+            let isOwn   = rowCls.contains("my_con") || bodyCls.contains("my_reply")
 
             comments.append(Comment(
                 id: "\(postId)_c\(i)", seq: seq,

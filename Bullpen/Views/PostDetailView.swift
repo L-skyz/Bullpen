@@ -22,7 +22,10 @@ class PostDetailViewModel: ObservableObject {
 
     func submitComment(boardId: String, postId: String) async {
         let trimmed = commentInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else {
+            actionError = "댓글 내용을 입력해주세요."
+            return
+        }
         guard trimmed.count <= 300 else {
             actionError = "댓글은 300자 이하로 입력해주세요."
             return
