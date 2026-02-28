@@ -56,11 +56,30 @@ class PostDetailViewModel: ObservableObject {
     func editPost(boardId: String, postId: String, categoryId: String,
                   title: String, content: String) async -> Bool {
         actionError = nil
+        let expectedTitle = normalizeText(title)
+        let expectedContent = normalizeText(content)
         do {
             try await MLBParkService.shared.editPost(boardId: boardId, postId: postId,
                                                      categoryId: categoryId,
                                                      title: title, content: content)
             await load(boardId: boardId, postId: postId)
+
+            // 서버가 200을 내려도 수정이 반영되지 않는 경우가 있어 후검증
+            if let updated = detail {
+                let actualTitle = normalizeText(updated.title)
+                let actualContent = normalizeText(stripHTML(updated.contentHTML))
+                let titleMatched = expectedTitle.isEmpty || actualTitle == expectedTitle
+                let contentMatched = expectedContent.isEmpty ||
+                    actualContent.contains(expectedContent) ||
+                    expectedContent.contains(actualContent)
+                if !titleMatched || !contentMatched {
+                    actionError = "게시글 수정이 반영되지 않았습니다. 말머리/권한을 확인 후 다시 시도해주세요."
+                    return false
+                }
+            } else {
+                actionError = "수정 결과를 확인하지 못했습니다. 다시 시도해주세요."
+                return false
+            }
             return true
         } catch {
             actionError = error.localizedDescription
@@ -97,6 +116,28 @@ class PostDetailViewModel: ObservableObject {
         } catch {
             actionError = error.localizedDescription
         }
+    }
+
+    private func stripHTML(_ html: String) -> String {
+        guard let data = html.data(using: .utf8),
+              let attr = try? NSAttributedString(
+                data: data,
+                options: [.documentType: NSAttributedString.DocumentType.html,
+                          .characterEncoding: String.Encoding.utf8.rawValue],
+                documentAttributes: nil)
+        else {
+            return html.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        }
+        return attr.string
+    }
+
+    private func normalizeText(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\u{00a0}", with: " ")
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
