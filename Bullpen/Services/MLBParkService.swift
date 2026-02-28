@@ -30,7 +30,7 @@ class MLBParkService {
     // CP949 (= Windows-949 = kCFStringEncodingDOSKorean = 0x0422)
     // String(data:encoding:) 경로는 NSStringEncoding 변환 레이어를 거쳐 간헐적으로 실패함
     // (Swift Forums #53109). CFStringCreateWithBytes 직접 호출이 iOS에서 가장 안정적.
-    private static func decodeCP949(_ data: Data) -> String? {
+    static func decodeCP949(_ data: Data) -> String? {
         data.withUnsafeBytes { ptr -> String? in
             guard let base = ptr.bindMemory(to: UInt8.self).baseAddress else { return nil }
             guard let cf = CFStringCreateWithBytes(

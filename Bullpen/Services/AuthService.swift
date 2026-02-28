@@ -79,15 +79,18 @@ class AuthService: ObservableObject {
             throw MLBParkError.networkError("로그인에 실패했습니다. 다시 시도해주세요.")
         }
 
-        // Step 4: 성공 — 쿠키에서 닉네임 읽기 (dongausernick)
+        // Step 4: 성공 — 쿠키에서 닉네임 읽기
+        // dongausernickuni (UTF-8 유니코드) 우선, 없으면 dongausernick (EUC-KR)
         let allCookies = HTTPCookieStorage.shared.cookies ?? []
-        if let nick = allCookies.first(where: {
-            $0.domain.contains("donga.com") &&
-            ($0.name == "dongausernick" || $0.name == "dongausernickuni") &&
+        let nickValue = allCookies.first(where: {
+            $0.domain.contains("donga.com") && $0.name == "dongausernickuni" &&
             !$0.value.isEmpty && $0.value != "deleted"
-        })?.value {
-            nickname = nick.removingPercentEncoding ?? nick
-        }
+        })?.value
+        ?? allCookies.first(where: {
+            $0.domain.contains("donga.com") && $0.name == "dongausernick" &&
+            !$0.value.isEmpty && $0.value != "deleted"
+        })?.value
+        if let n = nickValue { nickname = n.removingPercentEncoding ?? n }
 
         isLoggedIn = true
         persistCookies()
@@ -105,24 +108,36 @@ class AuthService: ObservableObject {
            .forEach { HTTPCookieStorage.shared.deleteCookie($0) }
     }
 
-    // MARK: - 프로필 조회
+    // MARK: - 프로필 조회 / 세션 검증
 
     func fetchProfile() async {
-        guard let url = URL(string: "\(base)/mp/mypage.php") else { return }
+        // mypage.php는 "로그아웃" 텍스트가 없으므로 메인 게시판 페이지로 확인
+        guard let url = URL(string: "\(base)/mp/b.php?b=bullpen") else { return }
         var req = URLRequest(url: url)
-        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
+        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+                     forHTTPHeaderField: "User-Agent")
 
         do {
             let (data, _) = try await session.data(for: req)
-            let html = String(data: data, encoding: .utf8) ?? ""
+            // EUC-KR 대응: UTF-8 실패 시 CP949 폴백
+            let html = String(data: data, encoding: .utf8)
+                    ?? MLBParkService.decodeCP949(data)
+                    ?? ""
 
-            if let doc = try? SwiftSoup.parse(html),
-               let nick = try? doc.select(".nick, .nickname, #user_nick").first()?.text() {
-                nickname = nick
+            if html.contains("로그아웃") {
+                isLoggedIn = true
+                // "로그아웃 (닉네임)" 패턴에서 닉네임 추출
+                if let start = html.range(of: "로그아웃 ("),
+                   let end   = html[start.upperBound...].range(of: ")") {
+                    let extracted = String(html[start.upperBound..<end.lowerBound])
+                    if !extracted.isEmpty { nickname = extracted }
+                }
+            } else {
+                isLoggedIn = false
+                nickname   = ""
             }
-            isLoggedIn = html.contains("로그아웃")
         } catch {
-            isLoggedIn = false
+            // 네트워크 오류 시 기존 상태 유지 (isLoggedIn 변경 안 함)
         }
     }
 
@@ -166,12 +181,17 @@ class AuthService: ObservableObject {
         let allCookies = HTTPCookieStorage.shared.cookies ?? []
 
         // 닉네임 쿠키가 있으면 확실히 로그인 상태
-        if let nickCookie = allCookies.first(where: {
-            $0.domain.contains("donga.com") &&
-            ($0.name == "dongausernick" || $0.name == "dongausernickuni") &&
+        // dongausernickuni (UTF-8) 우선, 없으면 dongausernick (EUC-KR)
+        let nickValue = allCookies.first(where: {
+            $0.domain.contains("donga.com") && $0.name == "dongausernickuni" &&
             !$0.value.isEmpty && $0.value != "deleted"
-        }) {
-            nickname = nickCookie.value.removingPercentEncoding ?? nickCookie.value
+        })?.value
+        ?? allCookies.first(where: {
+            $0.domain.contains("donga.com") && $0.name == "dongausernick" &&
+            !$0.value.isEmpty && $0.value != "deleted"
+        })?.value
+        if let n = nickValue {
+            nickname = n.removingPercentEncoding ?? n
             isLoggedIn = true
             return
         }
