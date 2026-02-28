@@ -8,6 +8,7 @@ class PostDetailViewModel: ObservableObject {
     @Published var error: String?
     @Published var commentInput = ""
     @Published var isSubmittingComment = false
+    @Published var actionError: String?
 
     func load(boardId: String, postId: String) async {
         isLoading = true; error = nil
@@ -26,8 +27,52 @@ class PostDetailViewModel: ObservableObject {
             try await MLBParkService.shared.writeComment(boardId: boardId, postId: postId, content: commentInput)
             commentInput = ""
             await load(boardId: boardId, postId: postId)
-        } catch {}
+        } catch {
+            actionError = error.localizedDescription
+        }
         isSubmittingComment = false
+    }
+
+    func deletePost(boardId: String, postId: String) async -> Bool {
+        do {
+            try await MLBParkService.shared.deletePost(boardId: boardId, postId: postId)
+            return true
+        } catch {
+            actionError = error.localizedDescription
+            return false
+        }
+    }
+
+    func editPost(boardId: String, postId: String, categoryId: String,
+                  title: String, content: String) async {
+        do {
+            try await MLBParkService.shared.editPost(boardId: boardId, postId: postId,
+                                                     categoryId: categoryId,
+                                                     title: title, content: content)
+            await load(boardId: boardId, postId: postId)
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    func deleteComment(boardId: String, postId: String, comment: Comment) async {
+        do {
+            try await MLBParkService.shared.deleteComment(boardId: boardId, postId: postId,
+                                                          commentSeq: comment.seq)
+            await load(boardId: boardId, postId: postId)
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    func editComment(boardId: String, postId: String, comment: Comment, newContent: String) async {
+        do {
+            try await MLBParkService.shared.editComment(boardId: boardId, postId: postId,
+                                                        commentSeq: comment.seq, content: newContent)
+            await load(boardId: boardId, postId: postId)
+        } catch {
+            actionError = error.localizedDescription
+        }
     }
 }
 
@@ -36,8 +81,27 @@ struct PostDetailView: View {
     let postId: String
     @StateObject private var vm = PostDetailViewModel()
     @EnvironmentObject var auth: AuthService
+    @Environment(\.dismiss) private var dismiss
     @State private var contentHeight: CGFloat = 200
     @FocusState private var commentFocused: Bool
+
+    // 게시글 수정
+    @State private var showEditPost = false
+    @State private var editTitle = ""
+    @State private var editContent = ""
+    @State private var editCategoryId = ""
+    // 게시글 삭제
+    @State private var showDeletePostAlert = false
+    // 댓글 수정
+    @State private var editingComment: Comment? = nil
+    @State private var editCommentText = ""
+    // 댓글 삭제
+    @State private var deletingComment: Comment? = nil
+
+    private var isMyPost: Bool {
+        guard let d = vm.detail else { return false }
+        return auth.isLoggedIn && !auth.nickname.isEmpty && d.author == auth.nickname
+    }
 
     var body: some View {
         Group {
@@ -83,6 +147,24 @@ struct PostDetailView: View {
                                         .font(.caption).foregroundColor(.secondary)
                                 }
                                 Spacer()
+                                // 내 게시글: 수정/삭제 메뉴
+                                if isMyPost {
+                                    Menu {
+                                        Button("수정") {
+                                            editTitle      = d.title
+                                            editContent    = stripHTML(d.contentHTML)
+                                            editCategoryId = d.maemuri
+                                            showEditPost   = true
+                                        }
+                                        Button("삭제", role: .destructive) {
+                                            showDeletePostAlert = true
+                                        }
+                                    } label: {
+                                        Image(systemName: "ellipsis.circle")
+                                            .font(.title3)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
                             }
 
                             HStack(spacing: 16) {
@@ -114,7 +196,14 @@ struct PostDetailView: View {
                             .padding(.horizontal).padding(.top, 12).padding(.bottom, 4)
 
                             ForEach(d.comments) { c in
-                                CommentRowView(comment: c)
+                                CommentRowView(comment: c) {
+                                    // 수정
+                                    editCommentText  = c.content
+                                    editingComment   = c
+                                } onDelete: {
+                                    // 삭제 확인
+                                    deletingComment = c
+                                }
                                 Divider().padding(.leading, 58)
                             }
                         }
@@ -151,8 +240,151 @@ struct PostDetailView: View {
         .navigationBarBackButtonHidden(true)
         .background(SwipeBackEnabler())
         .task { await vm.load(boardId: boardId, postId: postId) }
+        // 게시글 삭제 확인
+        .alert("게시글을 삭제하시겠습니까?", isPresented: $showDeletePostAlert) {
+            Button("삭제", role: .destructive) {
+                Task {
+                    let ok = await vm.deletePost(boardId: boardId, postId: postId)
+                    if ok { dismiss() }
+                }
+            }
+            Button("취소", role: .cancel) {}
+        }
+        // 댓글 삭제 확인
+        .alert("댓글을 삭제하시겠습니까?", isPresented: Binding(
+            get: { deletingComment != nil },
+            set: { if !$0 { deletingComment = nil } }
+        )) {
+            Button("삭제", role: .destructive) {
+                if let c = deletingComment {
+                    Task { await vm.deleteComment(boardId: boardId, postId: postId, comment: c) }
+                }
+                deletingComment = nil
+            }
+            Button("취소", role: .cancel) { deletingComment = nil }
+        }
+        // 댓글 수정 시트
+        .sheet(item: $editingComment) { c in
+            EditCommentSheet(text: $editCommentText) {
+                Task {
+                    await vm.editComment(boardId: boardId, postId: postId,
+                                        comment: c, newContent: editCommentText)
+                }
+            }
+        }
+        // 게시글 수정 시트
+        .sheet(isPresented: $showEditPost) {
+            EditPostSheet(
+                title: $editTitle,
+                content: $editContent
+            ) {
+                Task {
+                    await vm.editPost(boardId: boardId, postId: postId,
+                                     categoryId: editCategoryId,
+                                     title: editTitle, content: editContent)
+                    showEditPost = false
+                }
+            }
+        }
+        // 오류 토스트
+        .alert("오류", isPresented: Binding(
+            get: { vm.actionError != nil },
+            set: { if !$0 { vm.actionError = nil } }
+        )) {
+            Button("확인", role: .cancel) { vm.actionError = nil }
+        } message: {
+            Text(vm.actionError ?? "")
+        }
     }
 
+    private func stripHTML(_ html: String) -> String {
+        guard let data = html.data(using: .utf8),
+              let attr = try? NSAttributedString(
+                data: data,
+                options: [.documentType: NSAttributedString.DocumentType.html,
+                          .characterEncoding: String.Encoding.utf8.rawValue],
+                documentAttributes: nil)
+        else {
+            return html.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        }
+        return attr.string
+    }
+}
+
+// MARK: - 댓글 수정 시트
+
+struct EditCommentSheet: View {
+    @Binding var text: String
+    let onSubmit: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 12) {
+                TextEditor(text: $text)
+                    .frame(minHeight: 120)
+                    .padding(8)
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .focused($focused)
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("댓글 수정")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("취소") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("수정") {
+                        onSubmit()
+                        dismiss()
+                    }
+                    .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            .onAppear { focused = true }
+        }
+    }
+}
+
+// MARK: - 게시글 수정 시트
+
+struct EditPostSheet: View {
+    @Binding var title: String
+    @Binding var content: String
+    let onSubmit: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("제목") {
+                    TextField("제목", text: $title)
+                }
+                Section("내용") {
+                    TextEditor(text: $content)
+                        .frame(minHeight: 240)
+                }
+            }
+            .navigationTitle("게시글 수정")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("취소") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("수정") {
+                        onSubmit()
+                    }
+                    .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty ||
+                              content.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
 }
 
 // MARK: - 뒤로가기 버튼 숨김 + 스와이프백 유지
@@ -189,7 +421,6 @@ struct HTMLContentView: UIViewRepresentable {
     }
 
     func updateUIView(_ wv: WKWebView, context: Context) {
-        // 같은 HTML이면 재로딩 안함 → 영상 깜박거림 방지
         guard context.coordinator.lastHTML != html else { return }
         context.coordinator.lastHTML = html
 
@@ -244,6 +475,8 @@ struct HTMLContentView: UIViewRepresentable {
 
 struct CommentRowView: View {
     let comment: Comment
+    var onEdit: (() -> Void)? = nil
+    var onDelete: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -271,6 +504,22 @@ struct CommentRowView: View {
                         }
                         Spacer()
                         Text(comment.date).font(.caption2).foregroundColor(.secondary)
+                        // 내 댓글 수정/삭제 메뉴
+                        if comment.isOwn, onEdit != nil || onDelete != nil {
+                            Menu {
+                                if let onEdit {
+                                    Button("수정") { onEdit() }
+                                }
+                                if let onDelete {
+                                    Button("삭제", role: .destructive) { onDelete() }
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .padding(4)
+                            }
+                        }
                     }
                     Text(comment.content)
                         .font(.subheadline)

@@ -244,16 +244,30 @@ class MLBParkService {
         let contentHTML = try doc.select("div.ar_txt").first()?.html() ?? ""
 
         // 댓글: .reply_list .other_reply
+        // parent() = DIV#reply_{seq}.other_con 또는 .my_con (내 댓글)
         var comments: [Comment] = []
         let commentEls = try doc.select(".reply_list .other_reply")
         for (i, el) in commentEls.enumerated() {
             let nick   = try el.select("span.name").first()?.text() ?? ""
-            // span.photo는 .other_reply의 형제 (div.other_con 자식) → parent()로 올라가서 탐색
+            guard !nick.isEmpty else { continue }
             let avatar = try el.parent()?.select("span.photo img").first()?.attr("src") ?? ""
             let cDate  = try el.select("span.date").first()?.text() ?? ""
             let ip     = try el.select("span.ip").first()?.text() ?? ""
             let text   = try el.select("span.re_txt").first()?.text() ?? ""
-            comments.append(Comment(id: "\(postId)_c\(i)", author: nick, avatarUrl: avatar, date: cDate, ip: ip, content: text))
+
+            // seq: parent div id = "reply_{seq}"
+            let parentId  = (try? el.parent()?.attr("id")) ?? ""
+            let seq       = parentId.hasPrefix("reply_") ? String(parentId.dropFirst(6)) : ""
+
+            // 내 댓글 여부: parent class에 "my_con" 포함
+            let parentCls = (try? el.parent()?.attr("class")) ?? ""
+            let isOwn     = parentCls.contains("my_con")
+
+            comments.append(Comment(
+                id: "\(postId)_c\(i)", seq: seq,
+                author: nick, avatarUrl: avatar,
+                date: cDate, ip: ip, content: text, isOwn: isOwn
+            ))
         }
 
         return PostDetail(
@@ -324,13 +338,129 @@ class MLBParkService {
             "id":      postId,
             "prid":    "",
             "source":  "",
-            "info":    "",
+            "info":    "{\"replyId\":\"\"}",
             "content": content,
         ])
 
-        let (_, resp) = try await session.data(for: req)
+        let (data, resp) = try await session.data(for: req)
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
+        }
+        let body = String(data: data, encoding: .utf8) ?? ""
+        if body.contains("nologin") || body.contains("reallogin") {
+            throw MLBParkError.networkError("댓글 등록 실패. 로그인 상태를 확인하세요.")
+        }
+    }
+
+    // MARK: - 댓글 삭제 (게시글 상세)
+
+    func deleteComment(boardId: String, postId: String, commentSeq: String) async throws {
+        guard let url = URL(string: "\(base)/mp/action.php") else { throw MLBParkError.invalidURL }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/x-www-form-urlencoded; charset=EUC-KR", forHTTPHeaderField: "Content-Type")
+        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
+        req.setValue("\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=view", forHTTPHeaderField: "Referer")
+        req.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
+
+        req.httpBody = buildCP949Form([
+            "m":    "reply_DELETE",
+            "b":    boardId,
+            "id":   postId,
+            "info": "{\"replyId\":\"\(commentSeq)\"}",
+        ])
+
+        let (data, resp) = try await session.data(for: req)
+        if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
+            throw MLBParkError.networkError("HTTP \(http.statusCode)")
+        }
+        let body = String(data: data, encoding: .utf8) ?? ""
+        if body.contains("nologin") || body.contains("error") || body.contains("fail") {
+            throw MLBParkError.networkError("댓글 삭제 실패")
+        }
+    }
+
+    // MARK: - 댓글 수정 (게시글 상세)
+
+    func editComment(boardId: String, postId: String, commentSeq: String, content: String) async throws {
+        guard let url = URL(string: "\(base)/mp/action.php") else { throw MLBParkError.invalidURL }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/x-www-form-urlencoded; charset=EUC-KR", forHTTPHeaderField: "Content-Type")
+        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
+        req.setValue("\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=view", forHTTPHeaderField: "Referer")
+        req.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
+
+        req.httpBody = buildCP949Form([
+            "m":       "reply_UPDATE",
+            "b":       boardId,
+            "id":      postId,
+            "prid":    "",
+            "source":  "",
+            "info":    "{\"replyId\":\"\(commentSeq)\"}",
+            "content": content,
+        ])
+
+        let (data, resp) = try await session.data(for: req)
+        if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
+            throw MLBParkError.networkError("HTTP \(http.statusCode)")
+        }
+        let body = String(data: data, encoding: .utf8) ?? ""
+        if body.contains("nologin") || body.contains("error") {
+            throw MLBParkError.networkError("댓글 수정 실패")
+        }
+    }
+
+    // MARK: - 게시글 삭제/수정 (게시글 상세)
+
+    /// 게시글 삭제 (게시글 상세에서 호출 — action.php board_DELETE)
+    func deletePost(boardId: String, postId: String) async throws {
+        guard let url = URL(string: "\(base)/mp/action.php") else { throw MLBParkError.invalidURL }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
+        req.setValue("\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=view", forHTTPHeaderField: "Referer")
+        req.httpBody = "m=board_DELETE&b=\(boardId)&id=\(postId)&info=%7B%22notice%22%3A%22%22%7D"
+            .data(using: .utf8)
+        let (data, resp) = try await session.data(for: req)
+        if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
+            throw MLBParkError.networkError("HTTP \(http.statusCode)")
+        }
+        let body = String(data: data, encoding: .utf8) ?? ""
+        if body.contains("nologin") || body.contains("permission") || body.contains("error") {
+            throw MLBParkError.networkError("게시글 삭제 실패. 로그인 상태를 확인하세요.")
+        }
+    }
+
+    /// 게시글 수정 (게시글 상세에서 호출 — b.php board_UPDATE)
+    func editPost(boardId: String, postId: String, categoryId: String,
+                  title: String, content: String) async throws {
+        guard let url = URL(string: "\(base)/mp/b.php") else { throw MLBParkError.invalidURL }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/x-www-form-urlencoded; charset=EUC-KR", forHTTPHeaderField: "Content-Type")
+        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
+        req.setValue("\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=view", forHTTPHeaderField: "Referer")
+        req.httpBody = buildCP949Form([
+            "b":        boardId,
+            "m":        "board_UPDATE",
+            "id":       postId,
+            "category": categoryId,
+            "subject":  title,
+            "content":  content,
+            "upimg":    "",
+            "info":     "",
+        ])
+        let (data, resp) = try await session.data(for: req)
+        if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
+            throw MLBParkError.networkError("HTTP \(http.statusCode)")
+        }
+        let body = Self.decodeCP949(data) ?? String(data: data, encoding: .utf8) ?? ""
+        if body.contains("nologin") || body.contains("권한이 없") || body.contains("실패") {
+            throw MLBParkError.networkError("게시글 수정 실패. 로그인 상태를 확인하세요.")
         }
     }
 
@@ -376,14 +506,9 @@ class MLBParkService {
             // 날짜: td[3]
             let date = try tds.get(3).text().trimmingCharacters(in: .whitespaces)
 
-            // 댓글 삭제용 sequence (내댓글 전용)
-            let deleteSeq: String
-            if isComment {
-                let delBtn = try row.select(".dugout_delete_item").first()
-                deleteSeq  = (try delBtn?.attr("data-sequence")) ?? ""
-            } else {
-                deleteSeq = ""
-            }
+            // 삭제용 sequence — 게시글/댓글 모두 동일하게 data-sequence 사용
+            let delBtn   = try row.select(".dugout_delete_item").first()
+            let deleteSeq = (try delBtn?.attr("data-sequence")) ?? ""
 
             items.append(DugoutItem(
                 id: rowId,
@@ -399,39 +524,20 @@ class MLBParkService {
         return items
     }
 
-    /// 내댓글 삭제 (op.php)
-    func deleteMyComment(itemId: String, seq: String) async throws {
+    /// 더그아웃 항목 삭제 — 게시글/댓글 공통 (op.php deleteDugoutList)
+    func deleteDugoutItem(itemId: String, seq: String) async throws {
         let urlStr = "\(base)/mp/op.php?id=\(itemId)&seq=\(seq)&p=1&l=30&m=deleteDugoutList"
         guard let url = URL(string: urlStr) else { throw MLBParkError.invalidURL }
         var req = URLRequest(url: url)
         req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
-        req.setValue("\(base)/mp/dugout.php?source=mycomment", forHTTPHeaderField: "Referer")
+        req.setValue("\(base)/mp/dugout.php", forHTTPHeaderField: "Referer")
         let (data, resp) = try await session.data(for: req)
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
         let result = String(data: data, encoding: .utf8) ?? ""
-        if result.contains("error") || result.contains("fail") || result.contains("nologin") {
+        if result.contains("nologin") || result.contains("error") || result.contains("fail") {
             throw MLBParkError.networkError("삭제 실패")
-        }
-    }
-
-    /// 내게시글 삭제 (b.php board_DELETE)
-    func deleteMyPost(boardId: String, postId: String) async throws {
-        guard let url = URL(string: "\(base)/mp/b.php") else { throw MLBParkError.invalidURL }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
-        req.setValue("\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=view", forHTTPHeaderField: "Referer")
-        req.httpBody = "b=\(boardId)&id=\(postId)&m=board_DELETE".data(using: .utf8)
-        let (data, resp) = try await session.data(for: req)
-        if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
-            throw MLBParkError.networkError("HTTP \(http.statusCode)")
-        }
-        let result = Self.decodeCP949(data) ?? String(data: data, encoding: .utf8) ?? ""
-        if result.contains("nologin") || result.contains("권한이 없") || result.contains("실패") {
-            throw MLBParkError.networkError("게시글 삭제 실패. 로그인 상태를 확인하세요.")
         }
     }
 
