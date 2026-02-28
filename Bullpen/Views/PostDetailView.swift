@@ -229,7 +229,11 @@ struct PostDetailView: View {
                             .padding(.horizontal).padding(.top, 12).padding(.bottom, 4)
 
                             ForEach(d.comments) { c in
-                                CommentRowView(comment: c) {
+                                CommentRowView(
+                                    comment: c,
+                                    isPostAuthor: c.author.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        == d.author.trimmingCharacters(in: .whitespacesAndNewlines)
+                                ) {
                                     // 수정
                                     editCommentText  = c.content
                                     editingComment   = c
@@ -557,6 +561,7 @@ struct HTMLContentView: UIViewRepresentable {
 
 struct CommentRowView: View {
     let comment: Comment
+    var isPostAuthor: Bool = false
     var onEdit: (() -> Void)? = nil
     var onDelete: (() -> Void)? = nil
 
@@ -609,6 +614,7 @@ struct CommentRowView: View {
                 }
             }
             .padding(.horizontal).padding(.vertical, 10)
+            .background(isPostAuthor ? Color.orange.opacity(0.16) : Color.clear)
 
             ForEach(comment.replies) { reply in
                 HStack(alignment: .top, spacing: 10) {
@@ -625,7 +631,7 @@ struct CommentRowView: View {
                     }
                 }
                 .padding(.horizontal).padding(.vertical, 6)
-                .background(Color(.secondarySystemBackground))
+                .background(isPostAuthor ? Color.orange.opacity(0.12) : Color(.secondarySystemBackground))
             }
         }
     }
