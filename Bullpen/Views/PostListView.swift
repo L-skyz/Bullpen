@@ -12,13 +12,6 @@ enum SearchScope: String, CaseIterable {
         case .nickname:  return "닉네임"
         }
     }
-    var prompt: String {
-        switch self {
-        case .title:     return "제목 검색"
-        case .titleBody: return "제목+내용 검색"
-        case .nickname:  return "닉네임 검색"
-        }
-    }
 }
 
 @MainActor
@@ -34,17 +27,14 @@ class PostListViewModel: ObservableObject {
     private var page = 1
     private var searchPage = 1
 
-    func load(boardId: String, maemuri: String? = nil, keyword: String? = nil, searchSelect: String = "stt", reset: Bool = false) async {
+    func load(boardId: String, maemuri: String? = nil, reset: Bool = false) async {
         let startPage = reset ? 1 : page
         if reset { hasMore = true }
         guard hasMore else { return }
-        isLoading = true
-        error = nil
+        isLoading = true; error = nil
         do {
             let newPosts: [Post]
-            if let kw = keyword, !kw.isEmpty {
-                newPosts = try await MLBParkService.shared.fetchPostsByKeyword(boardId: boardId, keyword: kw, select: searchSelect, page: startPage)
-            } else if let m = maemuri, !m.isEmpty {
+            if let m = maemuri, !m.isEmpty {
                 newPosts = try await MLBParkService.shared.fetchPostsByMaemuri(boardId: boardId, maemuri: m, page: startPage)
             } else {
                 newPosts = try await MLBParkService.shared.fetchPosts(boardId: boardId, page: startPage)
@@ -54,10 +44,8 @@ class PostListViewModel: ObservableObject {
             if newPosts.isEmpty { hasMore = false }
             posts.append(contentsOf: newPosts)
         } catch is CancellationError {
-        } catch let urlError as URLError where urlError.code == .cancelled {
-        } catch {
-            self.error = error.localizedDescription
-        }
+        } catch let e as URLError where e.code == .cancelled {
+        } catch { self.error = error.localizedDescription }
         isLoading = false
     }
 
@@ -65,8 +53,7 @@ class PostListViewModel: ObservableObject {
         let startPage = reset ? 1 : searchPage
         if reset { hasMoreSearch = true }
         guard hasMoreSearch else { return }
-        isSearching = true
-        searchError = nil
+        isSearching = true; searchError = nil
         do {
             let newPosts = try await MLBParkService.shared.fetchPostsByKeyword(
                 boardId: boardId, keyword: keyword, select: select, page: startPage)
@@ -75,25 +62,20 @@ class PostListViewModel: ObservableObject {
             if newPosts.isEmpty { hasMoreSearch = false }
             searchResults.append(contentsOf: newPosts)
         } catch is CancellationError {
-        } catch let urlError as URLError where urlError.code == .cancelled {
-        } catch {
-            self.searchError = error.localizedDescription
-        }
+        } catch let e as URLError where e.code == .cancelled {
+        } catch { self.searchError = error.localizedDescription }
         isSearching = false
     }
 
     func clearSearch() {
-        searchResults = []
-        searchPage = 1
-        hasMoreSearch = true
-        searchError = nil
+        searchResults = []; searchPage = 1; hasMoreSearch = true; searchError = nil
     }
 }
 
 struct PostListView: View {
     @Binding var board: Board
     @StateObject private var vm = PostListViewModel()
-    @State private var selectedMaemuri: String = "전체"
+    @State private var selectedMaemuri = "전체"
     @State private var scrollPosition = ScrollPosition(idType: String.self)
     @State private var searchText = ""
     @State private var activeKeyword: String? = nil
@@ -101,153 +83,68 @@ struct PostListView: View {
     @State private var searchScope: SearchScope = .title
 
     private var maemurList: [String] {
-        guard !board.maemuri.isEmpty else { return [] }
-        return ["전체"] + board.maemuri
+        board.maemuri.isEmpty ? [] : ["전체"] + board.maemuri
     }
-
     private var activeMaemuri: String? {
-        activeKeyword != nil ? nil : (selectedMaemuri == "전체" ? nil : selectedMaemuri)
+        selectedMaemuri == "전체" ? nil : selectedMaemuri
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack {
             // ── 일반 게시글 목록 ──
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(vm.posts) { post in
-                        VStack(spacing: 0) {
-                            NavigationLink(value: post) {
-                                PostRowView(post: post)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
-                            }
-                            .buttonStyle(.plain)
-                            Divider().padding(.leading, 44)
-                        }
-                        .id(post.id)
-                        .onAppear {
-                            if post.id == vm.posts.last?.id {
-                                Task { await vm.load(boardId: board.id, maemuri: activeMaemuri) }
-                            }
-                        }
-                    }
-                    if vm.isLoading {
-                        HStack { Spacer(); ProgressView(); Spacer() }.padding()
-                    }
-                    if let err = vm.error {
-                        Text(err).foregroundColor(.red).font(.caption).padding()
-                    }
-                }
-            }
-            .scrollPosition($scrollPosition)
-            .refreshable {
-                scrollPosition = ScrollPosition(idType: String.self)
-                await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true)
-            }
+            normalList
 
             // ── 검색 결과 오버레이 (흰 배경) ──
             if activeKeyword != nil {
-                Color(.systemBackground)
-                    .ignoresSafeArea()
-
-                Group {
-                    if vm.searchResults.isEmpty && !vm.isSearching {
-                        VStack(spacing: 12) {
-                            Image(systemName: "doc.text.magnifyingglass")
-                                .font(.system(size: 48))
-                                .foregroundColor(.secondary)
-                            Text("검색 결과가 없습니다")
-                                .foregroundColor(.secondary)
-                            if let err = vm.searchError {
-                                Text(err).font(.caption).foregroundColor(.red)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        List {
-                            ForEach(vm.searchResults) { post in
-                                NavigationLink(value: post) {
-                                    PostRowView(post: post)
-                                }
-                                .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
-                                .listRowBackground(Color(.systemBackground))
-                                .onAppear {
-                                    if post.id == vm.searchResults.last?.id, let kw = activeKeyword {
-                                        Task { await vm.search(boardId: board.id, keyword: kw, select: searchScope.rawValue) }
-                                    }
-                                }
-                            }
-                            if vm.isSearching {
-                                HStack { Spacer(); ProgressView(); Spacer() }
-                                    .listRowBackground(Color(.systemBackground))
-                            }
-                            if let err = vm.searchError {
-                                Text(err).font(.caption).foregroundColor(.red)
-                                    .listRowBackground(Color(.systemBackground))
-                            }
-                        }
-                        .listStyle(.plain)
-                        .background(Color(.systemBackground))
-                    }
-                }
-                .transition(.opacity)
+                searchOverlay
+                    .transition(.opacity)
             }
         }
         .animation(.easeInOut(duration: 0.18), value: activeKeyword != nil)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button { isSearchPresented = true } label: {
+                Button {
+                    isSearchPresented = true
+                } label: {
                     Image(systemName: "magnifyingglass")
                 }
             }
             ToolbarItem(placement: .principal) {
                 if activeKeyword != nil {
-                    // 검색 중일 때: 결과 카운트 표시
                     Text("검색 결과 \(vm.searchResults.count)건")
                         .font(.headline).fontWeight(.semibold)
                 } else if !maemurList.isEmpty {
                     Menu {
                         ForEach(maemurList, id: \.self) { m in
                             Button {
-                                if m != selectedMaemuri {
-                                    selectedMaemuri = m
-                                    scrollPosition = ScrollPosition(idType: String.self)
-                                    Task { await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true) }
-                                }
+                                guard m != selectedMaemuri else { return }
+                                selectedMaemuri = m
+                                scrollPosition = ScrollPosition(idType: String.self)
+                                Task { await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true) }
                             } label: {
-                                if m == selectedMaemuri {
-                                    Label(m, systemImage: "checkmark")
-                                } else {
-                                    Text(m)
-                                }
+                                if m == selectedMaemuri { Label(m, systemImage: "checkmark") }
+                                else { Text(m) }
                             }
                         }
                     } label: {
                         HStack(spacing: 3) {
                             Text(selectedMaemuri == "전체" ? board.name : "\(board.name) · \(selectedMaemuri)")
-                                .font(.headline).fontWeight(.semibold)
-                                .foregroundColor(.primary)
+                                .font(.headline).fontWeight(.semibold).foregroundColor(.primary)
                             Image(systemName: "chevron.down")
-                                .font(.caption2).fontWeight(.semibold)
-                                .foregroundColor(.secondary)
+                                .font(.caption2).fontWeight(.semibold).foregroundColor(.secondary)
                         }
                     }
                 } else {
-                    Text(board.name)
-                        .font(.headline).fontWeight(.semibold)
+                    Text(board.name).font(.headline).fontWeight(.semibold)
                 }
             }
         }
         .navigationDestination(for: Post.self) { post in
             PostDetailView(boardId: post.boardId, postId: post.id)
         }
-        .searchable(text: $searchText, isPresented: $isSearchPresented, prompt: searchScope.prompt)
-        .searchScopes($searchScope) {
-            ForEach(SearchScope.allCases, id: \.self) { scope in
-                Text(scope.label).tag(scope)
-            }
-        }
+        // searchScopes 제거 → 하단 탭바 사라짐, 대신 오버레이 안에서 스코프 선택
+        .searchable(text: $searchText, isPresented: $isSearchPresented, prompt: "게시글 검색")
         .onSubmit(of: .search) {
             let kw = searchText.trimmingCharacters(in: .whitespaces)
             guard !kw.isEmpty else { return }
@@ -255,35 +152,127 @@ struct PostListView: View {
             vm.clearSearch()
             Task { await vm.search(boardId: board.id, keyword: kw, select: searchScope.rawValue, reset: true) }
         }
-        .onChange(of: searchScope) { _, _ in
-            if let kw = activeKeyword {
-                vm.clearSearch()
-                Task { await vm.search(boardId: board.id, keyword: kw, select: searchScope.rawValue, reset: true) }
-            }
+        .onChange(of: searchText) { _, new in
+            if new.isEmpty { activeKeyword = nil; vm.clearSearch() }
         }
         .onChange(of: isSearchPresented) { _, presented in
-            if !presented {
-                // 검색 바 닫힘 → 검색 결과 해제
-                searchText = ""
-                activeKeyword = nil
-                vm.clearSearch()
-            }
+            if !presented { searchText = ""; activeKeyword = nil; vm.clearSearch() }
         }
-        .onChange(of: searchText) { _, new in
-            // 검색어 지우면 결과도 클리어
-            if new.isEmpty && activeKeyword != nil {
-                activeKeyword = nil
-                vm.clearSearch()
-            }
+        .onChange(of: searchScope) { _, _ in
+            guard let kw = activeKeyword else { return }
+            vm.clearSearch()
+            Task { await vm.search(boardId: board.id, keyword: kw, select: searchScope.rawValue, reset: true) }
         }
         .task(id: board.id) {
-            selectedMaemuri = "전체"
-            searchText = ""
-            activeKeyword = nil
-            searchScope = .title
-            scrollPosition = ScrollPosition(idType: String.self)
+            selectedMaemuri = "전체"; searchText = ""; activeKeyword = nil
+            searchScope = .title; scrollPosition = ScrollPosition(idType: String.self)
             vm.clearSearch()
             await vm.load(boardId: board.id, reset: true)
+        }
+    }
+
+    // MARK: - 일반 목록
+
+    @ViewBuilder
+    private var normalList: some View {
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(vm.posts) { post in
+                    VStack(spacing: 0) {
+                        NavigationLink(value: post) {
+                            PostRowView(post: post)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.plain)
+                        Divider().padding(.leading, 44)
+                    }
+                    .id(post.id)
+                    .onAppear {
+                        if post.id == vm.posts.last?.id {
+                            Task { await vm.load(boardId: board.id, maemuri: activeMaemuri) }
+                        }
+                    }
+                }
+                if vm.isLoading {
+                    HStack { Spacer(); ProgressView(); Spacer() }.padding()
+                }
+                if let err = vm.error {
+                    Text(err).foregroundColor(.red).font(.caption).padding()
+                }
+            }
+        }
+        .scrollPosition($scrollPosition)
+        .refreshable {
+            scrollPosition = ScrollPosition(idType: String.self)
+            await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true)
+        }
+    }
+
+    // MARK: - 검색 결과 오버레이
+
+    @ViewBuilder
+    private var searchOverlay: some View {
+        ZStack {
+            Color(.systemBackground).ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                // 검색 범위 세그먼트 (하단 탭바 대신 여기에 표시)
+                Picker("", selection: $searchScope) {
+                    ForEach(SearchScope.allCases, id: \.self) { scope in
+                        Text(scope.label).tag(scope)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Color(.systemBackground))
+
+                Divider()
+
+                if vm.isSearching && vm.searchResults.isEmpty {
+                    Spacer()
+                    ProgressView()
+                    Spacer()
+                } else if vm.searchResults.isEmpty {
+                    Spacer()
+                    VStack(spacing: 12) {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.system(size: 44))
+                            .foregroundColor(.secondary)
+                        Text("검색 결과가 없습니다")
+                            .foregroundColor(.secondary)
+                        if let err = vm.searchError {
+                            Text(err).font(.caption).foregroundColor(.red)
+                        }
+                    }
+                    Spacer()
+                } else {
+                    List {
+                        ForEach(vm.searchResults) { post in
+                            NavigationLink(value: post) {
+                                PostRowView(post: post)
+                            }
+                            .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                            .listRowBackground(Color(.systemBackground))
+                            .onAppear {
+                                if post.id == vm.searchResults.last?.id, let kw = activeKeyword {
+                                    Task { await vm.search(boardId: board.id, keyword: kw, select: searchScope.rawValue) }
+                                }
+                            }
+                        }
+                        if vm.isSearching {
+                            HStack { Spacer(); ProgressView(); Spacer() }
+                                .listRowBackground(Color(.systemBackground))
+                        }
+                        if let err = vm.searchError {
+                            Text(err).font(.caption).foregroundColor(.red)
+                                .listRowBackground(Color(.systemBackground))
+                        }
+                    }
+                    .listStyle(.plain)
+                }
+            }
         }
     }
 }
@@ -297,14 +286,12 @@ struct PostRowView: View {
         HStack(alignment: .center, spacing: 8) {
             AsyncImage(url: URL(string: post.avatarUrl)) { phase in
                 switch phase {
-                case .success(let img):
-                    img.resizable().scaledToFill()
+                case .success(let img): img.resizable().scaledToFill()
                 default:
                     ZStack {
                         Circle().fill(avatarColor(for: post.author))
                         Text(String(post.author.prefix(1)))
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(.white)
+                            .font(.system(size: 9, weight: .bold)).foregroundColor(.white)
                     }
                 }
             }
@@ -316,28 +303,20 @@ struct PostRowView: View {
                     if !post.maemuri.isEmpty {
                         Text(post.maemuri)
                             .font(.caption2).fontWeight(.semibold)
-                            .foregroundColor(.blue)
-                            .lineLimit(1)
+                            .foregroundColor(.blue).lineLimit(1)
                     }
                     Text(post.title)
-                        .font(.subheadline)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                        .font(.subheadline).lineLimit(1).truncationMode(.tail)
                     if post.commentCount > 0 {
                         Text("[\(post.commentCount)]")
                             .font(.caption).fontWeight(.semibold)
-                            .foregroundColor(.red)
-                            .lineLimit(1)
+                            .foregroundColor(.red).lineLimit(1)
                     }
                 }
-
                 HStack {
-                    Text(post.author)
-                        .font(.caption).foregroundColor(.secondary)
-                        .lineLimit(1)
+                    Text(post.author).font(.caption).foregroundColor(.secondary).lineLimit(1)
                     Spacer()
-                    Text(post.date)
-                        .font(.caption).foregroundColor(.secondary)
+                    Text(post.date).font(.caption).foregroundColor(.secondary)
                 }
             }
         }
