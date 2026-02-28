@@ -38,6 +38,7 @@ struct PostDetail: Identifiable {
     let maemuri: String
     let title: String
     let author: String
+    let avatarUrl: String
     let date: String
     let views: Int
     let commentCount: Int

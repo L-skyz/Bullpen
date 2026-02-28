@@ -214,8 +214,10 @@ class MLBParkService {
         let title = maemuri.isEmpty ? titleFull
             : titleFull.replacingOccurrences(of: maemuri, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // 작성자: div.text1 span.nick
-        let author = try doc.select("div.text1 span.nick").first()?.text() ?? ""
+        // 작성자: div.text1 span.nick + span.photo img
+        let authorEl   = try doc.select("div.text1").first()
+        let author     = try authorEl?.select("span.nick").first()?.text() ?? ""
+        let authorAvatar = try authorEl?.select("span.photo img").first()?.attr("src") ?? ""
 
         // 날짜: div.text3 span.val
         let date = try doc.select("div.text3 span.val").first()?.text() ?? ""
@@ -233,11 +235,12 @@ class MLBParkService {
         var comments: [Comment] = []
         let commentEls = try doc.select(".reply_list .other_reply")
         for (i, el) in commentEls.enumerated() {
-            let nick  = try el.select("span.name").first()?.text() ?? ""
-            let cDate = try el.select("span.date").first()?.text() ?? ""
-            let ip    = try el.select("span.ip").first()?.text() ?? ""
-            let text  = try el.select("span.re_txt").first()?.text() ?? ""
-            comments.append(Comment(id: "\(postId)_c\(i)", author: nick, date: cDate, ip: ip, content: text))
+            let nick   = try el.select("span.name").first()?.text() ?? ""
+            let avatar = try el.select("span.photo img").first()?.attr("src") ?? ""
+            let cDate  = try el.select("span.date").first()?.text() ?? ""
+            let ip     = try el.select("span.ip").first()?.text() ?? ""
+            let text   = try el.select("span.re_txt").first()?.text() ?? ""
+            comments.append(Comment(id: "\(postId)_c\(i)", author: nick, avatarUrl: avatar, date: cDate, ip: ip, content: text))
         }
 
         return PostDetail(
@@ -246,6 +249,7 @@ class MLBParkService {
             maemuri: maemuri,
             title: title,
             author: author,
+            avatarUrl: authorAvatar,
             date: date,
             views: views,
             commentCount: commentCount,

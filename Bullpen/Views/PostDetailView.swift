@@ -61,14 +61,21 @@ struct PostDetailView: View {
                                 .font(.title3).fontWeight(.bold)
 
                             HStack(spacing: 10) {
-                                ZStack {
-                                    Circle()
-                                        .fill(avatarColor(d.author))
-                                        .frame(width: 36, height: 36)
-                                    Text(String(d.author.prefix(1)))
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(.white)
+                                AsyncImage(url: URL(string: d.avatarUrl)) { phase in
+                                    switch phase {
+                                    case .success(let img):
+                                        img.resizable().scaledToFill()
+                                    default:
+                                        ZStack {
+                                            Circle().fill(avatarColor(d.author))
+                                            Text(String(d.author.prefix(1)))
+                                                .font(.system(size: 14, weight: .semibold))
+                                                .foregroundColor(.white)
+                                        }
+                                    }
                                 }
+                                .frame(width: 36, height: 36)
+                                .clipShape(Circle())
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(d.author)
                                         .font(.subheadline).fontWeight(.semibold)
@@ -97,20 +104,18 @@ struct PostDetailView: View {
                         Divider().padding(.top, 4)
 
                         // ── 댓글 목록 ──
-                        if !d.comments.isEmpty {
-                            VStack(alignment: .leading, spacing: 0) {
-                                HStack {
-                                    Image(systemName: "bubble.left.and.bubble.right")
-                                        .foregroundColor(.secondary)
-                                    Text("댓글 \(d.comments.count)개")
-                                        .font(.headline)
-                                }
-                                .padding(.horizontal).padding(.top, 12).padding(.bottom, 4)
+                        VStack(alignment: .leading, spacing: 0) {
+                            HStack {
+                                Image(systemName: "bubble.left.and.bubble.right")
+                                    .foregroundColor(.secondary)
+                                Text("댓글 \(d.comments.count)개")
+                                    .font(.headline)
+                            }
+                            .padding(.horizontal).padding(.top, 12).padding(.bottom, 4)
 
-                                ForEach(d.comments) { c in
-                                    CommentRowView(comment: c)
-                                    Divider().padding(.leading, 58)
-                                }
+                            ForEach(d.comments) { c in
+                                CommentRowView(comment: c)
+                                Divider().padding(.leading, 58)
                             }
                         }
 
@@ -148,11 +153,6 @@ struct PostDetailView: View {
         .task { await vm.load(boardId: boardId, postId: postId) }
     }
 
-    private func avatarColor(_ name: String) -> Color {
-        let palette: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .red]
-        let hash = name.unicodeScalars.reduce(0) { $0 + Int($1.value) }
-        return palette[abs(hash) % palette.count]
-    }
 }
 
 // MARK: - 뒤로가기 버튼 숨김 + 스와이프백 유지
@@ -248,12 +248,21 @@ struct CommentRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 10) {
-                ZStack {
-                    Circle().fill(avatarColor(comment.author)).frame(width: 36, height: 36)
-                    Text(String(comment.author.prefix(1)))
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
+                AsyncImage(url: URL(string: comment.avatarUrl)) { phase in
+                    switch phase {
+                    case .success(let img):
+                        img.resizable().scaledToFill()
+                    default:
+                        ZStack {
+                            Circle().fill(avatarColor(comment.author))
+                            Text(String(comment.author.prefix(1)))
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+                    }
                 }
+                .frame(width: 36, height: 36)
+                .clipShape(Circle())
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text(comment.author).font(.subheadline).fontWeight(.semibold)
@@ -290,9 +299,10 @@ struct CommentRowView: View {
         }
     }
 
-    private func avatarColor(_ name: String) -> Color {
-        let palette: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .red]
-        let hash = name.unicodeScalars.reduce(0) { $0 + Int($1.value) }
-        return palette[abs(hash) % palette.count]
-    }
+}
+
+private func avatarColor(_ name: String) -> Color {
+    let palette: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .red]
+    let hash = name.unicodeScalars.reduce(0) { $0 + Int($1.value) }
+    return palette[abs(hash) % palette.count]
 }
