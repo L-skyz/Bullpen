@@ -539,8 +539,13 @@ class MLBParkService {
         guard !trimmedTitle.isEmpty, !trimmedContent.isEmpty else {
             throw MLBParkError.networkError("제목과 내용을 입력해주세요.")
         }
-        guard !categoryId.isEmpty else {
-            throw MLBParkError.networkError("말머리를 선택해주세요.")
+
+        // modify 폼의 hidden 필드(sig/info/upimg/category)를 먼저 회수한다.
+        // sig 미포함 상태로 board_UPDATE를 보내면 서버가 조용히 반영하지 않는 경우가 있다.
+        let hidden = (try? await fetchModifyFormHiddenParams(boardId: boardId, postId: postId)) ?? [:]
+        let effectiveCategory = categoryId.isEmpty ? (hidden["category"] ?? "") : categoryId
+        guard !effectiveCategory.isEmpty else {
+            throw MLBParkError.networkError("말머리 값(category)을 확인할 수 없습니다.")
         }
 
         guard let url = URL(string: "\(base)/mp/b.php") else { throw MLBParkError.invalidURL }
@@ -548,17 +553,25 @@ class MLBParkService {
         req.httpMethod = "POST"
         req.setValue("application/x-www-form-urlencoded; charset=EUC-KR", forHTTPHeaderField: "Content-Type")
         req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
-        req.setValue("\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=view", forHTTPHeaderField: "Referer")
-        req.httpBody = buildCP949Form([
-            "b":        boardId,
-            "m":        "board_UPDATE",
-            "id":       postId,
-            "category": categoryId,
-            "subject":  trimmedTitle,
-            "content":  trimmedContent,
-            "upimg":    "",
-            "info":     "",
-        ])
+        req.setValue("\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=modify", forHTTPHeaderField: "Referer")
+
+        var params = hidden
+        params["b"] = boardId
+        params["m"] = "board_UPDATE"
+        params["id"] = postId
+        params["category"] = effectiveCategory
+        params["subject"] = trimmedTitle
+        params["content"] = trimmedContent
+        params["upimg"] = hidden["upimg"] ?? ""
+        params["info"] = hidden["info"] ?? ""
+        // 서버가 SIG 대문자로 내려주는 경우도 있어 둘 다 정규화
+        if let sig = hidden["sig"] ?? hidden["SIG"], !sig.isEmpty {
+            params["sig"] = sig
+        } else {
+            params.removeValue(forKey: "sig")
+            params.removeValue(forKey: "SIG")
+        }
+        req.httpBody = buildCP949Form(params)
         let (_, resp) = try await session.data(for: req)
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
@@ -645,6 +658,37 @@ class MLBParkService {
     }
 
     // MARK: - 유틸
+
+    /// 게시글 수정폼(m=modify)의 hidden 파라미터를 회수한다.
+    private func fetchModifyFormHiddenParams(boardId: String, postId: String) async throws -> [String: String] {
+        let modifyURL = "\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=modify"
+        let html = try await fetch(modifyURL)
+        let doc = try SwiftSoup.parse(html)
+        var params: [String: String] = [:]
+
+        // form 안 hidden input 위주로 수집
+        let hiddenInputs = try doc.select("form input[type=hidden][name]")
+        for input in hiddenInputs {
+            let name = try input.attr("name").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { continue }
+            params[name] = try input.attr("value")
+        }
+
+        // 일부 페이지는 type 생략 케이스가 있어 sig/category는 보강
+        if params["sig"] == nil, params["SIG"] == nil {
+            if let sig = try doc.select("input[name=sig], input[name=SIG]").first()?.attr("value"),
+               !sig.isEmpty {
+                params["sig"] = sig
+            }
+        }
+        if params["category"] == nil {
+            if let category = try doc.select("input[name=category]").first()?.attr("value"),
+               !category.isEmpty {
+                params["category"] = category
+            }
+        }
+        return params
+    }
 
     private func extractParam(_ key: String, from path: String) -> String? {
         // /mp/b.php?... 형태(슬래시 시작 상대경로)는 base + path, 그 외 상대경로는 base/path

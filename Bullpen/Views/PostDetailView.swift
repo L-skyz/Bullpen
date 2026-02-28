@@ -56,30 +56,11 @@ class PostDetailViewModel: ObservableObject {
     func editPost(boardId: String, postId: String, categoryId: String,
                   title: String, content: String) async -> Bool {
         actionError = nil
-        let expectedTitle = normalizeText(title)
-        let expectedContent = normalizeText(content)
         do {
             try await MLBParkService.shared.editPost(boardId: boardId, postId: postId,
                                                      categoryId: categoryId,
                                                      title: title, content: content)
             await load(boardId: boardId, postId: postId)
-
-            // 서버가 200을 내려도 수정이 반영되지 않는 경우가 있어 후검증
-            if let updated = detail {
-                let actualTitle = normalizeText(updated.title)
-                let actualContent = normalizeText(stripHTML(updated.contentHTML))
-                let titleMatched = expectedTitle.isEmpty || actualTitle == expectedTitle
-                let contentMatched = expectedContent.isEmpty ||
-                    actualContent.contains(expectedContent) ||
-                    expectedContent.contains(actualContent)
-                if !titleMatched || !contentMatched {
-                    actionError = "게시글 수정이 반영되지 않았습니다. 말머리/권한을 확인 후 다시 시도해주세요."
-                    return false
-                }
-            } else {
-                actionError = "수정 결과를 확인하지 못했습니다. 다시 시도해주세요."
-                return false
-            }
             return true
         } catch {
             actionError = error.localizedDescription
@@ -117,28 +98,6 @@ class PostDetailViewModel: ObservableObject {
             actionError = error.localizedDescription
         }
     }
-
-    private func stripHTML(_ html: String) -> String {
-        guard let data = html.data(using: .utf8),
-              let attr = try? NSAttributedString(
-                data: data,
-                options: [.documentType: NSAttributedString.DocumentType.html,
-                          .characterEncoding: String.Encoding.utf8.rawValue],
-                documentAttributes: nil)
-        else {
-            return html.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-        }
-        return attr.string
-    }
-
-    private func normalizeText(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\u{00a0}", with: " ")
-            .components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
 }
 
 struct PostDetailView: View {
@@ -162,8 +121,6 @@ struct PostDetailView: View {
     @State private var editCommentText = ""
     // 댓글 삭제
     @State private var deletingComment: Comment? = nil
-    @State private var showActionErrorAlert = false
-    @State private var actionErrorText = ""
 
     private var isMyPost: Bool {
         guard let d = vm.detail else { return false }
@@ -361,8 +318,7 @@ struct PostDetailView: View {
                 categoryId: $editCategoryId,
                 categories: editCategories,
                 title: $editTitle,
-                content: $editContent,
-                errorMessage: vm.actionError
+                content: $editContent
             ) {
                 Task {
                     let ok = await vm.editPost(boardId: boardId, postId: postId,
@@ -372,16 +328,14 @@ struct PostDetailView: View {
                 }
             }
         }
-        .onChange(of: vm.actionError) { _, newValue in
-            guard let message = newValue, !message.isEmpty else { return }
-            actionErrorText = message
-            showActionErrorAlert = true
-        }
         // 오류 토스트
-        .alert("오류", isPresented: $showActionErrorAlert) {
-            Button("확인", role: .cancel) { }
+        .alert("오류", isPresented: Binding(
+            get: { vm.actionError != nil },
+            set: { if !$0 { vm.actionError = nil } }
+        )) {
+            Button("확인", role: .cancel) { vm.actionError = nil }
         } message: {
-            Text(actionErrorText)
+            Text(vm.actionError ?? "")
         }
     }
 
@@ -467,7 +421,6 @@ struct EditPostSheet: View {
     let categories: [BoardCategory]
     @Binding var title: String
     @Binding var content: String
-    let errorMessage: String?
     let onSubmit: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -490,13 +443,6 @@ struct EditPostSheet: View {
                 Section("내용") {
                     TextEditor(text: $content)
                         .frame(minHeight: 240)
-                }
-                if let errorMessage, !errorMessage.isEmpty {
-                    Section {
-                        Text(errorMessage)
-                            .foregroundColor(.red)
-                            .font(.caption)
-                    }
                 }
             }
             .navigationTitle("게시글 수정")
