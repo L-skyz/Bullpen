@@ -50,7 +50,10 @@ class AuthService: ObservableObject {
             "errorChk":     "",
             "idsave_value": ""
         ]
-        req.httpBody = params.urlEncoded.data(using: .utf8)
+        req.httpBody = params
+            .map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0.value)" }
+            .joined(separator: "&")
+            .data(using: .utf8)
 
         let (data, resp) = try await session.data(for: req)
 
