@@ -539,45 +539,52 @@ class MLBParkService {
         guard !trimmedTitle.isEmpty, !trimmedContent.isEmpty else {
             throw MLBParkError.networkError("제목과 내용을 입력해주세요.")
         }
-
-        // modify 폼의 hidden 필드(sig/info/upimg/category)를 먼저 회수한다.
-        // sig 미포함 상태로 board_UPDATE를 보내면 서버가 조용히 반영하지 않는 경우가 있다.
-        let hidden = (try? await fetchModifyFormHiddenParams(boardId: boardId, postId: postId)) ?? [:]
-        let effectiveCategory = categoryId.isEmpty ? (hidden["category"] ?? "") : categoryId
+        let prefill = (try? await fetchUpdateFormParams(boardId: boardId, postId: postId)) ?? [:]
+        let effectiveCategory = categoryId.isEmpty ? (prefill["category"] ?? "") : categoryId
         guard !effectiveCategory.isEmpty else {
             throw MLBParkError.networkError("말머리 값(category)을 확인할 수 없습니다.")
         }
 
-        guard let url = URL(string: "\(base)/mp/b.php") else { throw MLBParkError.invalidURL }
+        guard let url = URL(string: "\(base)/mp/action.php") else { throw MLBParkError.invalidURL }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
-        req.setValue("application/x-www-form-urlencoded; charset=EUC-KR", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
         req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
-        req.setValue("\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=modify", forHTTPHeaderField: "Referer")
+        req.setValue("\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=update", forHTTPHeaderField: "Referer")
+        req.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
 
-        var params = hidden
-        params["b"] = boardId
-        params["m"] = "board_UPDATE"
-        params["id"] = postId
-        params["category"] = effectiveCategory
-        params["subject"] = trimmedTitle
-        params["content"] = trimmedContent
-        params["upimg"] = hidden["upimg"] ?? ""
-        params["info"] = hidden["info"] ?? ""
-        // 서버가 SIG 대문자로 내려주는 경우도 있어 둘 다 정규화
-        if let sig = hidden["sig"] ?? hidden["SIG"], !sig.isEmpty {
-            params["sig"] = sig
-        } else {
-            params.removeValue(forKey: "sig")
-            params.removeValue(forKey: "SIG")
-        }
-        req.httpBody = buildCP949Form(params)
-        let (_, resp) = try await session.data(for: req)
+        let upimg = prefill["upimg"] ?? ""
+        let info = buildPostInfo(boardId: boardId, categoryId: effectiveCategory, upimg: upimg)
+        req.httpBody = buildUTF8Form([
+            "b":        boardId,
+            "m":        "board_UPDATE",
+            "id":       postId,
+            "category": effectiveCategory,
+            "subject":  trimmedTitle,
+            "content":  trimmedContent,
+            "upimg":    upimg,
+            "info":     info,
+        ])
+
+        let (data, resp) = try await session.data(for: req)
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
-        // board_UPDATE 응답 HTML에 "nologin"/"로그인" 스크립트 문자열이 공존해 오탐 가능
-        // → HTTP 상태 코드 기준으로만 실패 판정
+
+        if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let status = obj["status"] as? String {
+            guard status == "ok" else {
+                throw MLBParkError.networkError("게시글 수정 실패(\(status))")
+            }
+            return
+        }
+
+        let raw = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if raw.isEmpty {
+            throw MLBParkError.networkError("게시글 수정 실패(빈 응답)")
+        }
+        throw MLBParkError.networkError("게시글 수정 실패(\(raw))")
     }
 
     // MARK: - 더그아웃 (내게시글 / 내댓글)
@@ -659,35 +666,36 @@ class MLBParkService {
 
     // MARK: - 유틸
 
-    /// 게시글 수정폼(m=modify)의 hidden 파라미터를 회수한다.
-    private func fetchModifyFormHiddenParams(boardId: String, postId: String) async throws -> [String: String] {
-        let modifyURL = "\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=modify"
-        let html = try await fetch(modifyURL)
+    /// 게시글 수정폼(m=update)의 기본 파라미터(category/upimg)를 회수한다.
+    private func fetchUpdateFormParams(boardId: String, postId: String) async throws -> [String: String] {
+        let updateURL = "\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=update"
+        let html = try await fetch(updateURL)
         let doc = try SwiftSoup.parse(html)
         var params: [String: String] = [:]
-
-        // form 안 hidden input 위주로 수집
-        let hiddenInputs = try doc.select("form input[type=hidden][name]")
-        for input in hiddenInputs {
-            let name = try input.attr("name").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !name.isEmpty else { continue }
-            params[name] = try input.attr("value")
-        }
-
-        // 일부 페이지는 type 생략 케이스가 있어 sig/category는 보강
-        if params["sig"] == nil, params["SIG"] == nil {
-            if let sig = try doc.select("input[name=sig], input[name=SIG]").first()?.attr("value"),
-               !sig.isEmpty {
-                params["sig"] = sig
+        if let form = try doc.select("form#writeForm").first() {
+            if let upimg = try form.select("input[name=upimg]").first()?.attr("value") {
+                params["upimg"] = upimg
             }
-        }
-        if params["category"] == nil {
-            if let category = try doc.select("input[name=category]").first()?.attr("value"),
-               !category.isEmpty {
-                params["category"] = category
+            if let selected = try form.select("select[name=category] option[selected]").first()?.attr("value"),
+               !selected.isEmpty, selected != "0" {
+                params["category"] = selected
             }
         }
         return params
+    }
+
+    /// update 폼의 info와 동일한 JSON 문자열 생성
+    private func buildPostInfo(boardId: String, categoryId: String, upimg: String) -> String {
+        let obj: [String: String] = [
+            "b": boardId,
+            "category": categoryId,
+            "upimg": upimg,
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: obj, options: []),
+           let json = String(data: data, encoding: .utf8) {
+            return json
+        }
+        return "{}"
     }
 
     private func extractParam(_ key: String, from path: String) -> String? {
