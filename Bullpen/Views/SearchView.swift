@@ -1,5 +1,21 @@
 import SwiftUI
 
+// MARK: - SearchScope
+
+enum SearchScope: String, CaseIterable, Hashable {
+    case title       = "subject"
+    case titleContent = "all"
+    case author      = "name"
+
+    var label: String {
+        switch self {
+        case .title:        return "제목"
+        case .titleContent: return "제목+내용"
+        case .author:       return "닉네임"
+        }
+    }
+}
+
 // MARK: - ViewModel
 
 @MainActor
