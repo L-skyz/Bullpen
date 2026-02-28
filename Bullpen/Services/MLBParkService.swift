@@ -27,12 +27,19 @@ class MLBParkService {
     private let session: URLSession
     private var warmedUp = false
 
-    // CP949 (Unified Hangul Code) = 0x0422: EUC-KR의 Windows 확장판 (실제 한국 사이트 대부분 사용)
-    // 주의: 표준 EUC-KR(0x0940)이 아닌 CP949(0x0422)를 써야 완성형 한글 전체 커버
-    private static let cp949: String.Encoding = {
-        let cfEnc = CFStringConvertEncodingToNSStringEncoding(0x0422)
-        return String.Encoding(rawValue: cfEnc)
-    }()
+    // CP949 (= Windows-949 = kCFStringEncodingDOSKorean = 0x0422)
+    // String(data:encoding:) 경로는 NSStringEncoding 변환 레이어를 거쳐 간헐적으로 실패함
+    // (Swift Forums #53109). CFStringCreateWithBytes 직접 호출이 iOS에서 가장 안정적.
+    private static func decodeCP949(_ data: Data) -> String? {
+        data.withUnsafeBytes { ptr -> String? in
+            guard let base = ptr.bindMemory(to: UInt8.self).baseAddress else { return nil }
+            guard let cf = CFStringCreateWithBytes(
+                kCFAllocatorDefault, base, data.count,
+                CFStringEncoding(0x0422), false   // kCFStringEncodingDOSKorean
+            ) else { return nil }
+            return cf as String
+        }
+    }
 
     private init() {
         let config = URLSessionConfiguration.default
@@ -72,12 +79,12 @@ class MLBParkService {
         let html: String?
         switch charset {
         case "euc-kr", "x-windows-949", "ks_c_5601-1987", "cp949":
-            // 한국어 레거시 인코딩 → CP949(0x0422)로 디코딩
-            html = String(data: data, encoding: Self.cp949)
+            // 한국어 레거시 인코딩 → CFStringCreateWithBytes 직접 호출 (안정적)
+            html = Self.decodeCP949(data)
         default:
-            // UTF-8 우선, 실패 시 CP949, 최후 Latin-1
+            // UTF-8 우선, 실패 시 CP949 (EUC-KR 헤더 누락 대비), 최후 Latin-1
             html = String(data: data, encoding: .utf8)
-                ?? String(data: data, encoding: Self.cp949)
+                ?? Self.decodeCP949(data)
                 ?? String(data: data, encoding: .isoLatin1)
         }
 
@@ -288,8 +295,7 @@ class MLBParkService {
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
-        let body = String(data: data, encoding: Self.cp949)
-            ?? String(data: data, encoding: .utf8) ?? ""
+        let body = Self.decodeCP949(data) ?? String(data: data, encoding: .utf8) ?? ""
         if body.contains("로그인") || body.contains("실패") {
             throw MLBParkError.networkError("글쓰기 실패. 로그인 상태를 확인하세요.")
         }
@@ -347,7 +353,8 @@ class MLBParkService {
 
     /// 문자열을 CP949 바이트로 변환 후 퍼센트 인코딩
     private func percentEncodeCP949(_ value: String) -> String {
-        guard let data = value.data(using: Self.cp949) else {
+        let cp949NS = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(0x0422))
+        guard let data = value.data(using: cp949NS) else {
             return value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
         }
         var result = ""

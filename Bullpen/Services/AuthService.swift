@@ -18,6 +18,10 @@ class AuthService: ObservableObject {
         session = URLSession(configuration: config)
         restorePersistedCookies()
         checkLoginStatus()
+        // 쿠키 복원 후 서버로 실제 세션 유효 여부 검증
+        if isLoggedIn {
+            Task { await fetchProfile() }
+        }
     }
 
     // MARK: - 로그인
@@ -95,9 +99,10 @@ class AuthService: ObservableObject {
         isLoggedIn = false
         nickname = ""
         UserDefaults.standard.removeObject(forKey: "persistedCookies")
-        if let cookies = HTTPCookieStorage.shared.cookies(for: URL(string: base)!) {
-            cookies.forEach { HTTPCookieStorage.shared.deleteCookie($0) }
-        }
+        // mlbpark뿐 아니라 donga.com 전체 쿠키 삭제
+        let all = HTTPCookieStorage.shared.cookies ?? []
+        all.filter { $0.domain.contains("donga.com") }
+           .forEach { HTTPCookieStorage.shared.deleteCookie($0) }
     }
 
     // MARK: - 프로필 조회
@@ -124,10 +129,12 @@ class AuthService: ObservableObject {
     // MARK: - 쿠키 영속화
 
     private func persistCookies() {
-        let donga = URL(string: "https://mlbpark.donga.com")!
-        let all = HTTPCookieStorage.shared.cookies(for: donga) ?? []
+        // mlbpark.donga.com만이 아닌 *.donga.com 전체 저장
+        // (인증 쿠키가 secure.donga.com에서 .donga.com 도메인으로 세팅될 수 있음)
+        let all = HTTPCookieStorage.shared.cookies ?? []
         let saved: [[String: String]] = all.compactMap { c in
-            guard !c.value.isEmpty, c.value != "deleted" else { return nil }
+            guard c.domain.contains("donga.com"),
+                  !c.value.isEmpty, c.value != "deleted" else { return nil }
             return ["name": c.name, "value": c.value,
                     "domain": c.domain, "path": c.path]
         }
@@ -157,22 +164,26 @@ class AuthService: ObservableObject {
 
     private func checkLoginStatus() {
         let allCookies = HTTPCookieStorage.shared.cookies ?? []
-        let authCookie = allCookies.first { c in
-            c.domain.contains("donga.com") &&
-            ["dongauserid", "dusr", "mlbuser", "login_id"].contains(c.name) &&
-            !c.value.isEmpty && c.value != "deleted"
-        }
-        isLoggedIn = authCookie != nil
 
-        if isLoggedIn {
-            if let nick = allCookies.first(where: {
-                $0.domain.contains("donga.com") &&
-                ($0.name == "dongausernick" || $0.name == "dongausernickuni") &&
-                !$0.value.isEmpty && $0.value != "deleted"
-            })?.value {
-                nickname = nick.removingPercentEncoding ?? nick
-            }
+        // 닉네임 쿠키가 있으면 확실히 로그인 상태
+        if let nickCookie = allCookies.first(where: {
+            $0.domain.contains("donga.com") &&
+            ($0.name == "dongausernick" || $0.name == "dongausernickuni") &&
+            !$0.value.isEmpty && $0.value != "deleted"
+        }) {
+            nickname = nickCookie.value.removingPercentEncoding ?? nickCookie.value
+            isLoggedIn = true
+            return
         }
+
+        // 닉네임 쿠키가 없어도 복원된 donga.com 쿠키가 있으면 일단 로그인 간주
+        // (fetchProfile이 비동기로 서버 검증하여 최종 결정)
+        let hasDongaCookie = allCookies.contains {
+            $0.domain.contains("donga.com") &&
+            !$0.value.isEmpty && $0.value != "deleted"
+        }
+        let hasPersistedData = UserDefaults.standard.array(forKey: "persistedCookies") != nil
+        isLoggedIn = hasDongaCookie && hasPersistedData
     }
 }
 
