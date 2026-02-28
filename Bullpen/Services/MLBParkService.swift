@@ -331,13 +331,12 @@ class MLBParkService {
 
     /// 폼 파라미터를 CP949로 인코딩한 Data 반환 (한글 깨짐 방지)
     private func buildCP949Form(_ params: [String: String]) -> Data {
-        let safe = CharacterSet.alphanumerics.union(.init(charactersIn: "-._~"))
-        let body = params.map { key, value in
-            let ek = key.addingPercentEncoding(withAllowedCharacters: safe) ?? key
+        // Dictionary.map 클로저는 (key, value) 튜플 하나를 받음 → 괄호 필수
+        let body = params.map { (key, value) in
+            let ek = key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? key
             let ev = percentEncodeCP949(value)
             return "\(ek)=\(ev)"
         }.joined(separator: "&")
-        // 퍼센트 인코딩 후 남은 문자는 ASCII이므로 .ascii로 안전하게 변환
         return body.data(using: .ascii) ?? Data()
     }
 
@@ -346,13 +345,16 @@ class MLBParkService {
         guard let data = value.data(using: Self.cp949) else {
             return value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
         }
-        let safe = CharacterSet.alphanumerics.union(.init(charactersIn: "-._~"))
         var result = ""
         for byte in data {
-            let scalar = Unicode.Scalar(byte)
-            if safe.contains(scalar) {
-                result.append(Character(scalar))
-            } else {
+            // 안전한 ASCII 문자(alphanumeric + - . _ ~)는 그대로, 나머지는 퍼센트 인코딩
+            switch byte {
+            case 0x41...0x5A,  // A-Z
+                 0x61...0x7A,  // a-z
+                 0x30...0x39,  // 0-9
+                 0x2D, 0x2E, 0x5F, 0x7E:  // - . _ ~
+                result += String(bytes: [byte], encoding: .ascii) ?? ""
+            default:
                 result += String(format: "%%%02X", byte)
             }
         }
