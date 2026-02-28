@@ -61,6 +61,11 @@ class MLBParkService {
 
     // MARK: - 공통 요청
 
+    /// AuthService 등 외부에서 warmup+인코딩 처리된 HTML이 필요할 때 사용
+    func fetchHTML(_ urlStr: String) async throws -> String {
+        return try await fetch(urlStr)
+    }
+
     private func fetch(_ urlStr: String) async throws -> String {
         await warmupIfNeeded()
         guard let url = URL(string: urlStr) else { throw MLBParkError.invalidURL }

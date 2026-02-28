@@ -111,22 +111,15 @@ class AuthService: ObservableObject {
     // MARK: - 프로필 조회 / 세션 검증
 
     func fetchProfile() async {
-        // mypage.php는 "로그아웃" 텍스트가 없으므로 메인 게시판 페이지로 확인
-        guard let url = URL(string: "\(base)/mp/b.php?b=bullpen") else { return }
-        var req = URLRequest(url: url)
-        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
-                     forHTTPHeaderField: "User-Agent")
-
+        // MLBParkService.fetchHTML 사용 → warmup + 인코딩 처리 자동 포함
+        // (자체 session으로 직접 요청 시 gather.donga.com warmup 쿠키 누락으로
+        //  mlbpark가 로그인 상태 HTML 미반환하는 문제 방지)
         do {
-            let (data, _) = try await session.data(for: req)
-            // EUC-KR 대응: UTF-8 실패 시 CP949 폴백
-            let html = String(data: data, encoding: .utf8)
-                    ?? MLBParkService.decodeCP949(data)
-                    ?? ""
+            let html = try await MLBParkService.shared.fetchHTML("\(base)/mp/b.php?b=bullpen")
 
             if html.contains("로그아웃") {
                 isLoggedIn = true
-                // "로그아웃 (닉네임)" 패턴에서 닉네임 추출
+                // raw HTML 패턴: class='login'>로그아웃 (닉네임)</a>
                 if let start = html.range(of: "로그아웃 ("),
                    let end   = html[start.upperBound...].range(of: ")") {
                     let extracted = String(html[start.upperBound..<end.lowerBound])
@@ -137,7 +130,7 @@ class AuthService: ObservableObject {
                 nickname   = ""
             }
         } catch {
-            // 네트워크 오류 시 기존 상태 유지 (isLoggedIn 변경 안 함)
+            // 네트워크 오류 시 기존 상태 유지
         }
     }
 
