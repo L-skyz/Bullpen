@@ -214,10 +214,10 @@ class MLBParkService {
         let title = maemuri.isEmpty ? titleFull
             : titleFull.replacingOccurrences(of: maemuri, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // 작성자: div.text1 span.nick + span.photo img
-        let authorEl   = try doc.select("div.text1").first()
-        let author     = try authorEl?.select("span.nick").first()?.text() ?? ""
-        let authorAvatar = try authorEl?.select("span.photo img").first()?.attr("src") ?? ""
+        // 작성자: div.text1 span.nick (닉네임), ul.view_head span.photo img (프로필)
+        // div.text1 안의 img는 배지 아이콘이므로 ul.view_head에서 프로필 이미지 가져옴
+        let author       = try doc.select("div.text1 span.nick").first()?.text() ?? ""
+        let authorAvatar = try doc.select("ul.view_head span.photo img").first()?.attr("src") ?? ""
 
         // 날짜: div.text3 span.val
         let date = try doc.select("div.text3 span.val").first()?.text() ?? ""
@@ -236,7 +236,8 @@ class MLBParkService {
         let commentEls = try doc.select(".reply_list .other_reply")
         for (i, el) in commentEls.enumerated() {
             let nick   = try el.select("span.name").first()?.text() ?? ""
-            let avatar = try el.select("span.photo img").first()?.attr("src") ?? ""
+            // span.photo는 .other_reply의 형제 (div.other_con 자식) → parent()로 올라가서 탐색
+            let avatar = try el.parent()?.select("span.photo img").first()?.attr("src") ?? ""
             let cDate  = try el.select("span.date").first()?.text() ?? ""
             let ip     = try el.select("span.ip").first()?.text() ?? ""
             let text   = try el.select("span.re_txt").first()?.text() ?? ""
