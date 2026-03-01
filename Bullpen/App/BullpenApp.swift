@@ -15,8 +15,12 @@ struct BullpenApp: App {
         } catch {
             print("Audio session setup failed: \(error)")
         }
-        // 세션을 끊김 없이 유지 → YouTube 음소거 버튼 첫 탭 반응
         SilentAudioPlayer.shared.start()
+    }
+
+    private func deactivateAudioSession() {
+        SilentAudioPlayer.shared.stop()
+        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
     }
 
     var body: some Scene {
@@ -31,8 +35,10 @@ struct BullpenApp: App {
                     applyAudioSession()
                 }
                 .onChange(of: scenePhase) { phase in
-                    if phase == .active {
-                        applyAudioSession()
+                    switch phase {
+                    case .active:     applyAudioSession()
+                    case .background: deactivateAudioSession()
+                    default:          break
                     }
                 }
         }
