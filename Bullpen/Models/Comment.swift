@@ -11,11 +11,12 @@ struct Comment: Identifiable {
     let content: String
     let isOwn: Bool         // my_con 클래스 = 내 댓글
     let replyToAuthor: String // 대댓글 대상 닉네임 (span.name_re 파싱)
+    let depth: Int          // 0=최상위, 1=replied, 2=replied_re
     var replies: [Comment]
 
     init(id: String, seq: String = "", replyPrid: String = "", author: String, avatarUrl: String = "",
          date: String, ip: String, content: String,
-         isOwn: Bool = false, replyToAuthor: String = "", replies: [Comment] = []) {
+         isOwn: Bool = false, replyToAuthor: String = "", depth: Int = 0, replies: [Comment] = []) {
         self.id            = id
         self.seq           = seq
         self.replyPrid     = replyPrid.isEmpty ? seq : replyPrid
@@ -26,6 +27,7 @@ struct Comment: Identifiable {
         self.content       = content
         self.isOwn         = isOwn
         self.replyToAuthor = replyToAuthor
+        self.depth         = depth
         self.replies       = replies
     }
 }

@@ -296,13 +296,14 @@ class MLBParkService {
                 if !digits.isEmpty { replyPrid = String(digits) }
             }
 
+            let isRepliedRe = rowCls.contains("replied_re") || bodyCls.contains("replied_re")
+            let depth = isRepliedRe ? 2 : (isNested ? 1 : 0)
             let c = Comment(
                 id: "\(postId)_c\(i)", seq: seq, replyPrid: replyPrid,
                 author: nick, avatarUrl: avatar,
                 date: cDate, ip: ip, content: text, isOwn: isOwn,
-                replyToAuthor: replyToAuthor
+                replyToAuthor: replyToAuthor, depth: depth
             )
-            let isRepliedRe = rowCls.contains("replied_re") || bodyCls.contains("replied_re")
             flatList.append(FlatComment(comment: c, isNested: isNested, isRepliedRe: isRepliedRe))
         }
 

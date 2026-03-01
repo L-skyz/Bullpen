@@ -661,6 +661,10 @@ struct CommentRowView: View {
 
             ForEach(comment.replies) { reply in
                 HStack(alignment: .top, spacing: 10) {
+                    // depth=2(replied_re)이면 추가 들여쓰기
+                    if reply.depth >= 2 {
+                        Color.clear.frame(width: 20)
+                    }
                     Image(systemName: "arrow.turn.down.right")
                         .font(.caption).foregroundColor(.secondary)
                         .frame(width: 36).padding(.top, 2)
