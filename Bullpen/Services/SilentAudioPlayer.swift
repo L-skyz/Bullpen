@@ -44,4 +44,12 @@ final class SilentAudioPlayer: @unchecked Sendable {
         playerNode.scheduleBuffer(buffer, at: nil, options: .loops)
         playerNode.play()
     }
+
+    // 웹뷰에서 다시 음소거될 때 세션 점유를 재확보
+    func reclaimSession() {
+        configureAudioSession()
+        if !engine.isRunning || !playerNode.isPlaying {
+            startSilentPlayback()
+        }
+    }
 }

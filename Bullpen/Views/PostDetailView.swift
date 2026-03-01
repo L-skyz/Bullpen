@@ -535,6 +535,10 @@ struct HTMLContentView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "bpMuteState")
+    }
+
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         // 미디어 재생 설정
@@ -550,6 +554,16 @@ struct HTMLContentView: UIViewRepresentable {
         // 초기 음소거만 적용 (이후 사용자 언뮤트/볼륨 조작 허용)
         let js = """
         (function() {
+            function notifyMuteState(isMuted) {
+                try {
+                    if (window.webkit &&
+                        window.webkit.messageHandlers &&
+                        window.webkit.messageHandlers.bpMuteState) {
+                        window.webkit.messageHandlers.bpMuteState.postMessage(isMuted ? 'muted' : 'unmuted');
+                    }
+                } catch (e) {}
+            }
+
             function appendParam(src, key, value) {
                 if (src.indexOf(key + '=') !== -1) return src;
                 return src + (src.indexOf('?') !== -1 ? '&' : '?') + key + '=' + value;
@@ -564,6 +578,14 @@ struct HTMLContentView: UIViewRepresentable {
                     video.defaultMuted = true;
                     video.muted = true;
                     video.dataset.bpInitialMuted = '1';
+                    notifyMuteState(true);
+                }
+                if (!video.dataset.bpMuteObserver) {
+                    video.addEventListener('volumechange', function() {
+                        var isMuted = !!video.muted || Number(video.volume || 0) === 0;
+                        notifyMuteState(isMuted);
+                    }, true);
+                    video.dataset.bpMuteObserver = '1';
                 }
             }
 
@@ -592,6 +614,7 @@ struct HTMLContentView: UIViewRepresentable {
         let script = WKUserScript(source: js, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
         let controller = WKUserContentController()
         controller.addUserScript(script)
+        controller.add(context.coordinator, name: "bpMuteState")
         config.userContentController = controller
 
         let wv = WKWebView(frame: .zero, configuration: config)
@@ -641,10 +664,23 @@ struct HTMLContentView: UIViewRepresentable {
         wv.loadHTMLString(styled, baseURL: URL(string: "https://mlbpark.donga.com"))
     }
 
-    class Coordinator: NSObject, WKNavigationDelegate {
+    class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         let parent: HTMLContentView
         var lastHTML: String = ""
         init(_ p: HTMLContentView) { parent = p }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == "bpMuteState" else { return }
+
+            // 볼륨 조작 후 다시 음소거될 때 세션을 재점유
+            if let state = message.body as? String, state == "muted" {
+                SilentAudioPlayer.shared.reclaimSession()
+                return
+            }
+            if let muted = message.body as? Bool, muted {
+                SilentAudioPlayer.shared.reclaimSession()
+            }
+        }
 
         func webView(_ wv: WKWebView, didFinish _: WKNavigation!) {
             wv.evaluateJavaScript("document.body.scrollHeight") { result, _ in
