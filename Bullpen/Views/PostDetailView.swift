@@ -539,7 +539,7 @@ struct HTMLContentView: UIViewRepresentable {
         // 미디어 재생 설정
         config.allowsInlineMediaPlayback = true
         config.allowsPictureInPictureMediaPlayback = true
-        config.mediaTypesRequiringUserActionForPlayback = [.video, .audio]
+        config.mediaTypesRequiringUserActionForPlayback = []   // web-main 방식: 첫 탭 소비 없이 YouTube 컨트롤 즉시 반응
 
         // WKPreferences — Apple doc 확인: fullscreen + site quirks + JS popup
         config.preferences.isElementFullscreenEnabled = true

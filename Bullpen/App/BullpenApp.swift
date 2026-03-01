@@ -1,26 +1,17 @@
 import SwiftUI
-import AVFoundation
 import UIKit
+
+// web-main MyBrowserAppApp.swift 기반 이식
+// init()에서 _ = SilentAudioPlayer.shared → 자동 세션 설정 + 무음 재생 시작
+// background deactivate 없음 — 세션 항상 유지 (web-main 방식)
 
 @main
 struct BullpenApp: App {
-    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var auth   = AuthService.shared
     @StateObject private var filter = BlockFilter.shared
 
-    private func applyAudioSession() {
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            print("Audio session setup failed: \(error)")
-        }
-        SilentAudioPlayer.shared.start()
-    }
-
-    private func deactivateAudioSession() {
-        SilentAudioPlayer.shared.stop()
-        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+    init() {
+        _ = SilentAudioPlayer.shared
     }
 
     var body: some Scene {
@@ -28,19 +19,6 @@ struct BullpenApp: App {
             ContentView()
                 .environmentObject(auth)
                 .environmentObject(filter)
-                .onAppear {
-                    applyAudioSession()
-                }
-                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
-                    applyAudioSession()
-                }
-                .onChange(of: scenePhase) { phase in
-                    switch phase {
-                    case .active:     applyAudioSession()
-                    case .background: deactivateAudioSession()
-                    default:          break
-                    }
-                }
         }
     }
 }
