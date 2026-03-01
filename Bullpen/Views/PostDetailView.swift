@@ -670,7 +670,7 @@ struct CommentRowView: View {
                             Spacer()
                             Text(reply.date).font(.caption2).foregroundColor(.secondary)
                         }
-                        if !reply.replyToAuthor.isEmpty {
+                        if !reply.replyToAuthor.isEmpty && reply.replyToAuthor != reply.author {
                             Text("@\(reply.replyToAuthor)에게 답글")
                                 .font(.caption2).foregroundColor(.orange)
                         }
