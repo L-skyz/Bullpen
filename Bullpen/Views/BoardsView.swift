@@ -7,7 +7,7 @@ struct BoardsView: View {
                 NavigationLink(value: board) {
                     HStack {
                         Image(systemName: "bubble.left.and.bubble.right")
-                            .foregroundColor(.blue)
+                            .foregroundColor(.orange)
                         Text(board.name)
                             .font(.headline)
                     }
@@ -24,3 +24,4 @@ struct BoardsView: View {
         }
     }
 }
+

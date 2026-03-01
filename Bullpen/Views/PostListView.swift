@@ -178,7 +178,7 @@ struct PostRowView: View {
                     if !post.maemuri.isEmpty {
                         Text(post.maemuri)
                             .font(.caption2).fontWeight(.semibold)
-                            .foregroundColor(.blue).lineLimit(1)
+                            .foregroundColor(.orange).lineLimit(1)
                     }
                     Text(post.title).font(.subheadline).lineLimit(1).truncationMode(.tail)
                     if post.commentCount > 0 {
@@ -198,8 +198,9 @@ struct PostRowView: View {
     }
 
     private func avatarColor(for name: String) -> Color {
-        let palette: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .red, .cyan]
+        let palette: [Color] = [.orange, .green, .orange, .purple, .pink, .teal, .indigo, .red, .cyan]
         let hash = name.unicodeScalars.reduce(0) { $0 + Int($1.value) }
         return palette[abs(hash) % palette.count]
     }
 }
+

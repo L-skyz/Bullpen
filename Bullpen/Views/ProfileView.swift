@@ -11,7 +11,7 @@ struct ProfileView: View {
                 HStack {
                     Image(systemName: "person.circle.fill")
                         .font(.system(size: 48))
-                        .foregroundColor(.blue)
+                        .foregroundColor(.orange)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(auth.nickname.isEmpty ? "회원" : auth.nickname)
                             .font(.headline)
@@ -80,3 +80,4 @@ struct ProfileView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 }
+

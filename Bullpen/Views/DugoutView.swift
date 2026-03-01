@@ -87,7 +87,7 @@ struct DugoutView: View {
                 } label: {
                     Text("더 보기")
                         .frame(maxWidth: .infinity, alignment: .center)
-                        .foregroundColor(.blue)
+                        .foregroundColor(.orange)
                 }
                 .listRowBackground(Color(.systemBackground))
             }
@@ -173,9 +173,9 @@ struct DugoutItemRow: View {
                 if !item.boardName.isEmpty && item.boardName != "댓글" {
                     Text(item.boardName)
                         .font(.caption2).fontWeight(.semibold)
-                        .foregroundColor(.blue)
+                        .foregroundColor(.orange)
                         .padding(.horizontal, 5).padding(.vertical, 2)
-                        .background(Color.blue.opacity(0.1))
+                        .background(Color.orange.opacity(0.1))
                         .clipShape(RoundedRectangle(cornerRadius: 4))
                 } else if item.isComment {
                     Label("댓글", systemImage: "bubble.left.fill")
@@ -190,3 +190,4 @@ struct DugoutItemRow: View {
         .padding(.vertical, 4)
     }
 }
+

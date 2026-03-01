@@ -152,13 +152,13 @@ struct AppDrawer: View {
                             } label: {
                                 HStack(spacing: 12) {
                                     Image(systemName: "bubble.left.and.bubble.right.fill")
-                                        .foregroundColor(section == .board && board.id == selectedBoard.id ? .blue : .secondary)
+                                        .foregroundColor(section == .board && board.id == selectedBoard.id ? .orange : .secondary)
                                         .frame(width: 24)
                                     Text(board.name).font(.body).foregroundColor(.primary)
                                     Spacer()
                                     if section == .board && board.id == selectedBoard.id {
                                         Image(systemName: "checkmark")
-                                            .foregroundColor(.blue).fontWeight(.semibold)
+                                            .foregroundColor(.orange).fontWeight(.semibold)
                                     }
                                 }
                                 .padding(.vertical, 6)
@@ -197,16 +197,17 @@ struct AppDrawer: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: icon)
-                    .foregroundColor(section == target ? .blue : .secondary)
+                    .foregroundColor(section == target ? .orange : .secondary)
                     .frame(width: 24)
                 Text(label).font(.body).foregroundColor(.primary)
                 Spacer()
                 if section == target {
                     Image(systemName: "checkmark")
-                        .foregroundColor(.blue).fontWeight(.semibold)
+                        .foregroundColor(.orange).fontWeight(.semibold)
                 }
             }
             .padding(.vertical, 6)
         }
     }
 }
+

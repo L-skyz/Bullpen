@@ -71,7 +71,7 @@ struct BlockSettingsView: View {
                     Button(action: addItem) {
                         Image(systemName: "plus.circle.fill")
                             .font(.title3)
-                            .foregroundColor(newText.trimmingCharacters(in: .whitespaces).isEmpty ? .secondary : .blue)
+                            .foregroundColor(newText.trimmingCharacters(in: .whitespaces).isEmpty ? .secondary : .orange)
                     }
                     .disabled(newText.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
@@ -130,3 +130,4 @@ struct BlockSettingsView: View {
         inputFocused = false
     }
 }
+

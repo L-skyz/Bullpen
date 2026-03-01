@@ -156,8 +156,8 @@ struct PostDetailView: View {
                                 Text(d.maemuri)
                                     .font(.caption).fontWeight(.semibold)
                                     .padding(.horizontal, 7).padding(.vertical, 3)
-                                    .background(Color.blue.opacity(0.12))
-                                    .foregroundColor(.blue)
+                                    .background(Color.orange.opacity(0.12))
+                                    .foregroundColor(.orange)
                                     .clipShape(RoundedRectangle(cornerRadius: 5))
                             }
                             Text(d.title)
@@ -262,7 +262,7 @@ struct PostDetailView: View {
                                 if let replyTo = vm.replyingTo {
                                     HStack(spacing: 6) {
                                         Image(systemName: "arrow.turn.down.left")
-                                            .font(.caption).foregroundColor(.blue)
+                                            .font(.caption).foregroundColor(.orange)
                                         Text("@\(replyTo.author)에게 답글")
                                             .font(.caption).foregroundColor(.secondary)
                                         Spacer()
@@ -564,7 +564,7 @@ struct HTMLContentView: UIViewRepresentable {
           img  { max-width: 100%; height: auto; display: block;
                  margin: 10px auto; border-radius: 6px; }
           video { max-width: 100%; border-radius: 6px; }
-          a    { color: #007AFF; text-decoration: none; }
+          a    { color: #FF9500; text-decoration: none; }
           p    { margin: 6px 0; }
           iframe {
             width: 100% !important; max-width: 100%;
@@ -640,7 +640,7 @@ struct CommentRowView: View {
                             Button(action: onReply) {
                                 Image(systemName: "arrow.turn.down.left")
                                     .font(.caption)
-                                    .foregroundColor(.blue.opacity(0.8))
+                                    .foregroundColor(.orange.opacity(0.8))
                                     .padding(4)
                             }
                         }
@@ -700,7 +700,8 @@ struct CommentRowView: View {
 }
 
 private func avatarColor(_ name: String) -> Color {
-    let palette: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .red]
+    let palette: [Color] = [.orange, .green, .orange, .purple, .pink, .teal, .indigo, .red]
     let hash = name.unicodeScalars.reduce(0) { $0 + Int($1.value) }
     return palette[abs(hash) % palette.count]
 }
+
