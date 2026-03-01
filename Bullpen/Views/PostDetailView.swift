@@ -1,7 +1,5 @@
 import SwiftUI
 import WebKit
-import AVKit
-import AVFoundation
 import UIKit
 
 @MainActor
@@ -540,16 +538,16 @@ struct HTMLContentView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         // 미디어 재생 설정
-        config.allowsInlineMediaPlayback = false
+        config.allowsInlineMediaPlayback = true
         config.allowsPictureInPictureMediaPlayback = true
-        config.mediaTypesRequiringUserActionForPlayback = .all
+        config.mediaTypesRequiringUserActionForPlayback = []
 
         // WKPreferences — Apple doc 확인: fullscreen + site quirks + JS popup
         config.preferences.isElementFullscreenEnabled = true
         config.preferences.isSiteSpecificQuirksModeEnabled = true
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
 
-        // 웹뷰 미디어는 강제 음소거 잠금(언뮤트 차단 목적)
+        // 초기 음소거만 적용 (이후 사용자 언뮤트/볼륨 조작 허용)
         let js = """
         (function() {
             function appendParam(src, key, value) {
@@ -557,40 +555,31 @@ struct HTMLContentView: UIViewRepresentable {
                 return src + (src.indexOf('?') !== -1 ? '&' : '?') + key + '=' + value;
             }
 
-            function lockMuted(video) {
+            function applyInitialMute(video) {
                 if (!video) return;
                 video.setAttribute('playsinline', '');
                 video.setAttribute('webkit-playsinline', '');
-                video.setAttribute('muted', '');
-                video.defaultMuted = true;
-                video.muted = true;
-                video.volume = 0;
-
-                if (!video.dataset.bpMutedLock) {
-                    video.addEventListener('volumechange', function() {
-                        if (!video.muted || video.volume > 0) {
-                            video.muted = true;
-                            video.volume = 0;
-                        }
-                    }, true);
-                    video.dataset.bpMutedLock = '1';
+                if (!video.dataset.bpInitialMuted) {
+                    video.setAttribute('muted', '');
+                    video.defaultMuted = true;
+                    video.muted = true;
+                    video.dataset.bpInitialMuted = '1';
                 }
             }
 
             function processMedia(doc) {
                 if (!doc) return;
                 doc.querySelectorAll('video').forEach(function(v) {
-                    lockMuted(v);
+                    applyInitialMute(v);
                 });
                 doc.querySelectorAll('iframe').forEach(function(f) {
                     var src = f.src || f.getAttribute('src') || '';
                     var lower = src.toLowerCase();
                     if (lower.indexOf('youtube') !== -1 || lower.indexOf('youtu') !== -1) {
-                        f.setAttribute('allow', 'encrypted-media; picture-in-picture; fullscreen');
+                        f.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
                         if (!f.dataset.bpMuteApplied) {
                             src = appendParam(src, 'playsinline', '1');
                             src = appendParam(src, 'mute', '1');
-                            src = appendParam(src, 'controls', '0');
                             f.src = src;
                             f.dataset.bpMuteApplied = '1';
                         }
@@ -598,15 +587,6 @@ struct HTMLContentView: UIViewRepresentable {
                 });
             }
             processMedia(document);
-            setInterval(function() {
-                processMedia(document);
-                document.querySelectorAll('iframe').forEach(function(fr) {
-                    try {
-                        var d = fr.contentDocument || (fr.contentWindow && fr.contentWindow.document);
-                        if (d) processMedia(d);
-                    } catch(e) {}
-                });
-            }, 1000);
         })();
         """
         let script = WKUserScript(source: js, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
@@ -682,63 +662,8 @@ struct HTMLContentView: UIViewRepresentable {
                 return
             }
 
-            if isDirectMediaURL(url) {
-                playInNativePlayer(url: url)
-                decisionHandler(.cancel)
-                return
-            }
-
             UIApplication.shared.open(url)
             decisionHandler(.cancel)
-        }
-
-        private func isDirectMediaURL(_ url: URL) -> Bool {
-            let ext = url.pathExtension.lowercased()
-            if ["mp4", "m4v", "mov", "m3u8", "mp3", "m4a", "aac", "wav"].contains(ext) {
-                return true
-            }
-            let path = url.absoluteString.lowercased()
-            return path.contains(".m3u8") || path.contains(".mp4")
-        }
-
-        private func playInNativePlayer(url: URL) {
-            do {
-                try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
-                try AVAudioSession.sharedInstance().setActive(true)
-            } catch {
-                print("Native player audio session setup failed: \(error)")
-            }
-
-            let player = AVPlayer(url: url)
-            let vc = AVPlayerViewController()
-            vc.player = player
-            vc.modalPresentationStyle = .fullScreen
-            topViewController()?.present(vc, animated: true) {
-                player.play()
-            }
-        }
-
-        private func topViewController(base: UIViewController? = nil) -> UIViewController? {
-            let root: UIViewController? = {
-                if let base { return base }
-                let scenes = UIApplication.shared.connectedScenes
-                    .compactMap { $0 as? UIWindowScene }
-                let keyWindow = scenes
-                    .flatMap { $0.windows }
-                    .first(where: { $0.isKeyWindow })
-                return keyWindow?.rootViewController
-            }()
-
-            if let nav = root as? UINavigationController {
-                return topViewController(base: nav.visibleViewController)
-            }
-            if let tab = root as? UITabBarController, let selected = tab.selectedViewController {
-                return topViewController(base: selected)
-            }
-            if let presented = root?.presentedViewController {
-                return topViewController(base: presented)
-            }
-            return root
         }
     }
 }
