@@ -58,6 +58,7 @@ struct SearchView: View {
     @State private var searchText = ""
     @State private var searchScope: SearchScope = .title
     @State private var activeKeyword: String? = nil
+    @State private var selectedPost: Post? = nil
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -122,7 +123,7 @@ struct SearchView: View {
         .background(Color(.systemBackground))
         .navigationTitle("검색")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(for: Post.self) { post in
+        .navigationDestination(item: $selectedPost) { post in
             PostDetailView(boardId: post.boardId, postId: post.id)
         }
         .onAppear { isFocused = true }
@@ -145,9 +146,13 @@ struct SearchView: View {
     private var resultList: some View {
         List {
             ForEach(vm.results) { post in
-                NavigationLink(value: post) {
+                Button {
+                    selectedPost = post
+                } label: {
                     PostRowView(post: post)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
                 .listRowBackground(Color(.systemBackground))
                 .onAppear {

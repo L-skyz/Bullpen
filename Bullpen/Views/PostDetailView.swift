@@ -9,6 +9,7 @@ class PostDetailViewModel: ObservableObject {
     @Published var commentInput = ""
     @Published var isSubmittingComment = false
     @Published var actionError: String?
+    @Published var replyingTo: Comment? = nil
 
     func load(boardId: String, postId: String) async {
         isLoading = true; error = nil
@@ -33,8 +34,10 @@ class PostDetailViewModel: ObservableObject {
         }
         isSubmittingComment = true
         do {
-            try await MLBParkService.shared.writeComment(boardId: boardId, postId: postId, content: trimmed)
+            let parentSeq = replyingTo?.seq ?? ""
+            try await MLBParkService.shared.writeComment(boardId: boardId, postId: postId, content: trimmed, parentSeq: parentSeq)
             commentInput = ""
+            replyingTo = nil
             await load(boardId: boardId, postId: postId)
         } catch {
             actionError = error.localizedDescription
@@ -240,33 +243,58 @@ struct PostDetailView: View {
                                 } onDelete: {
                                     // 삭제 확인
                                     deletingComment = c
-                                }
+                                } onReply: auth.isLoggedIn ? {
+                                    vm.replyingTo = c
+                                    commentFocused = true
+                                } : nil
                                 Divider().padding(.leading, 58)
                             }
                         }
 
                         // ── 댓글 입력 ──
                         if auth.isLoggedIn {
-                            HStack(spacing: 8) {
-                                TextField("댓글을 입력하세요", text: $vm.commentInput)
+                            VStack(spacing: 0) {
+                                if let replyTo = vm.replyingTo {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "arrow.turn.down.left")
+                                            .font(.caption).foregroundColor(.blue)
+                                        Text("@\(replyTo.author)에게 답글")
+                                            .font(.caption).foregroundColor(.secondary)
+                                        Spacer()
+                                        Button {
+                                            vm.replyingTo = nil
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+                                    .padding(.horizontal).padding(.vertical, 6)
+                                    .background(Color(.secondarySystemBackground))
+                                }
+                                HStack(spacing: 8) {
+                                    TextField(
+                                        vm.replyingTo == nil ? "댓글을 입력하세요" : "답글을 입력하세요",
+                                        text: $vm.commentInput
+                                    )
                                     .textFieldStyle(.roundedBorder)
                                     .focused($commentFocused)
-                                Button {
-                                    Task { await vm.submitComment(boardId: boardId, postId: postId) }
-                                } label: {
-                                    if vm.isSubmittingComment {
-                                        ProgressView().frame(width: 44, height: 36)
-                                    } else {
-                                        Image(systemName: "paperplane.fill")
-                                            .frame(width: 44, height: 36)
+                                    Button {
+                                        Task { await vm.submitComment(boardId: boardId, postId: postId) }
+                                    } label: {
+                                        if vm.isSubmittingComment {
+                                            ProgressView().frame(width: 44, height: 36)
+                                        } else {
+                                            Image(systemName: "paperplane.fill")
+                                                .frame(width: 44, height: 36)
+                                        }
                                     }
+                                    .disabled(
+                                        vm.commentInput.trimmingCharacters(in: .whitespacesAndNewlines).count > 300 ||
+                                        vm.isSubmittingComment
+                                    )
                                 }
-                                .disabled(
-                                    vm.commentInput.trimmingCharacters(in: .whitespacesAndNewlines).count > 300 ||
-                                    vm.isSubmittingComment
-                                )
+                                .padding()
                             }
-                            .padding()
                         }
 
                         Spacer(minLength: 40)
@@ -564,6 +592,7 @@ struct CommentRowView: View {
     var isPostAuthor: Bool = false
     var onEdit: (() -> Void)? = nil
     var onDelete: (() -> Void)? = nil
+    var onReply: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -591,6 +620,15 @@ struct CommentRowView: View {
                         }
                         Spacer()
                         Text(comment.date).font(.caption2).foregroundColor(.secondary)
+                        // 답글 버튼
+                        if let onReply {
+                            Button(action: onReply) {
+                                Image(systemName: "arrow.turn.down.left")
+                                    .font(.caption)
+                                    .foregroundColor(.blue.opacity(0.8))
+                                    .padding(4)
+                            }
+                        }
                         // 내 댓글 수정/삭제 메뉴
                         if comment.isOwn, onEdit != nil || onDelete != nil {
                             Menu {

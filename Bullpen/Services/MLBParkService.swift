@@ -345,7 +345,7 @@ class MLBParkService {
 
     // MARK: - 댓글쓰기
 
-    func writeComment(boardId: String, postId: String, content: String) async throws {
+    func writeComment(boardId: String, postId: String, content: String, parentSeq: String = "") async throws {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw MLBParkError.networkError("댓글 내용을 입력해주세요.")
@@ -368,7 +368,7 @@ class MLBParkService {
             "m":       "reply_INSERT",
             "b":       boardId,
             "id":      postId,
-            "prid":    "",
+            "prid":    parentSeq,
             "source":  "",
             "info":    "{\"replyId\":\"\"}",
             "content": trimmed,
