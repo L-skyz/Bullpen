@@ -3,7 +3,7 @@ import AVFoundation
 /// AVAudioSession을 끊김 없이 유지하기 위해 무음 PCM 버퍼를 루프 재생한다.
 /// YouTube WKWebView의 음소거 버튼이 첫 번째 탭에 반응하지 않는 문제를
 /// (세션 재협상 지연) 방지하는 역할을 한다.
-final class SilentAudioPlayer {
+final class SilentAudioPlayer: @unchecked Sendable {
     static let shared = SilentAudioPlayer()
 
     private let engine     = AVAudioEngine()
