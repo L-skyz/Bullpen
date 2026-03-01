@@ -26,6 +26,7 @@ class MLBParkService {
     private let base = "https://mlbpark.donga.com"
     private let session: URLSession
     private var warmedUp = false
+    private var lastSessionKeepAlive = Date.distantPast
 
     // CP949 (= Windows-949 = kCFStringEncodingDOSKorean = 0x0422)
     // String(data:encoding:) 경로는 NSStringEncoding 변환 레이어를 거쳐 간헐적으로 실패함
@@ -56,6 +57,22 @@ class MLBParkService {
         guard let url = URL(string: "https://gather.donga.com/?cookie=1") else { return }
         var req = URLRequest(url: url)
         req.setValue("https://mlbpark.donga.com/", forHTTPHeaderField: "Referer")
+        _ = try? await session.data(for: req)
+    }
+
+    // 액션 요청 전 세션 유지(점유): warmup + 주기적 keepalive
+    private func ensureActionSessionReady() async {
+        await warmupIfNeeded()
+
+        let now = Date()
+        guard now.timeIntervalSince(lastSessionKeepAlive) > 90 else { return }
+        lastSessionKeepAlive = now
+
+        guard let url = URL(string: "\(base)/mp/b.php?b=bullpen") else { return }
+        var req = URLRequest(url: url)
+        req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        req.setValue(base, forHTTPHeaderField: "Referer")
+        req.setValue("ko-KR,ko;q=0.9", forHTTPHeaderField: "Accept-Language")
         _ = try? await session.data(for: req)
     }
 
@@ -364,7 +381,7 @@ class MLBParkService {
             throw MLBParkError.networkError("제목과 내용을 입력해주세요.")
         }
 
-        await warmupIfNeeded()
+        await ensureActionSessionReady()
         guard let url = URL(string: "\(base)/mp/action.php") else { throw MLBParkError.invalidURL }
 
         var req = URLRequest(url: url)
@@ -418,6 +435,8 @@ class MLBParkService {
         guard trimmed.count <= 300 else {
             throw MLBParkError.networkError("댓글은 300자 이하로 입력해주세요.")
         }
+
+        await ensureActionSessionReady()
 
         guard let url = URL(string: "\(base)/mp/action.php") else { throw MLBParkError.invalidURL }
 
@@ -489,6 +508,7 @@ class MLBParkService {
     // MARK: - 댓글 삭제 (게시글 상세)
 
     func deleteComment(boardId: String, postId: String, commentSeq: String) async throws {
+        await ensureActionSessionReady()
         guard let url = URL(string: "\(base)/mp/action.php") else { throw MLBParkError.invalidURL }
 
         var req = URLRequest(url: url)
@@ -518,6 +538,7 @@ class MLBParkService {
     // MARK: - 댓글 수정 (게시글 상세)
 
     func editComment(boardId: String, postId: String, commentSeq: String, content: String) async throws {
+        await ensureActionSessionReady()
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw MLBParkError.networkError("댓글 내용을 입력해주세요.")
@@ -599,6 +620,7 @@ class MLBParkService {
 
     /// 게시글 삭제 (게시글 상세에서 호출 — action.php board_DELETE)
     func deletePost(boardId: String, postId: String) async throws {
+        await ensureActionSessionReady()
         guard let url = URL(string: "\(base)/mp/action.php") else { throw MLBParkError.invalidURL }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -620,6 +642,7 @@ class MLBParkService {
     /// 게시글 수정 (게시글 상세에서 호출 — b.php board_UPDATE)
     func editPost(boardId: String, postId: String, categoryId: String,
                   title: String, content: String) async throws {
+        await ensureActionSessionReady()
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty, !trimmedContent.isEmpty else {
@@ -737,6 +760,7 @@ class MLBParkService {
 
     /// 더그아웃 항목 삭제 — 게시글/댓글 공통 (op.php deleteDugoutList)
     func deleteDugoutItem(itemId: String, seq: String) async throws {
+        await ensureActionSessionReady()
         let urlStr = "\(base)/mp/op.php?id=\(itemId)&seq=\(seq)&p=1&l=30&m=deleteDugoutList"
         guard let url = URL(string: urlStr) else { throw MLBParkError.invalidURL }
         var req = URLRequest(url: url)
