@@ -281,7 +281,10 @@ struct PostDetailView: View {
                                         vm.replyingTo == nil ? "댓글을 입력하세요" : "답글을 입력하세요",
                                         text: $vm.commentInput
                                     )
-                                    .textFieldStyle(.roundedBorder)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 12)
+                                    .background(Color(.secondarySystemBackground))
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
                                     .focused($commentFocused)
                                     Button {
                                         Task { await vm.submitComment(boardId: boardId, postId: postId) }
