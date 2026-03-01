@@ -711,8 +711,9 @@ class MLBParkService {
             // 날짜: td[3]
             let date = try tds.get(3).text().trimmingCharacters(in: .whitespaces)
 
-            // 삭제용 sequence — 게시글/댓글 모두 동일하게 data-sequence 사용
-            let delBtn   = try row.select(".dugout_delete_item").first()
+            // 삭제용 data-id / data-sequence — 버튼 속성에서 직접 파싱
+            let delBtn    = try row.select(".dugout_delete_item").first()
+            let deleteId  = (try delBtn?.attr("data-id")) ?? rowId
             let deleteSeq = (try delBtn?.attr("data-sequence")) ?? ""
 
             items.append(DugoutItem(
@@ -723,6 +724,7 @@ class MLBParkService {
                 date: date,
                 isComment: isComment,
                 originalPostId: originalPost,
+                deleteId: deleteId,
                 deleteSeq: deleteSeq
             ))
         }
@@ -741,8 +743,8 @@ class MLBParkService {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
         let result = String(data: data, encoding: .utf8) ?? ""
-        if result.contains("nologin") || result.contains("error") || result.contains("fail") {
-            throw MLBParkError.networkError("삭제 실패")
+        if result.contains("nologin") {
+            throw MLBParkError.networkError("로그인이 필요합니다")
         }
     }
 

@@ -29,7 +29,7 @@ class DugoutViewModel: ObservableObject {
 
     func delete(_ item: DugoutItem) async {
         do {
-            try await MLBParkService.shared.deleteDugoutItem(itemId: item.id, seq: item.deleteSeq)
+            try await MLBParkService.shared.deleteDugoutItem(itemId: item.deleteId, seq: item.deleteSeq)
             withAnimation { items.removeAll { $0.id == item.id } }
         } catch {
             self.error = error.localizedDescription

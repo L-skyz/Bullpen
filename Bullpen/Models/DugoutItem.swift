@@ -16,6 +16,8 @@ struct DugoutItem: Identifiable, Hashable {
     let isComment: Bool
     /// 열람할 원글 postId (내게시글=id 동일, 내댓글=원글 ID)
     let originalPostId: String
-    /// 댓글 삭제용 sequence 값 (내댓글 전용, op.php data-sequence)
+    /// op.php deleteDugoutList 용 data-id (버튼 속성값, rowId와 다를 수 있음)
+    let deleteId: String
+    /// op.php deleteDugoutList 용 data-sequence
     let deleteSeq: String
 }
