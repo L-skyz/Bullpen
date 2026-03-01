@@ -537,6 +537,45 @@ struct HTMLContentView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
+        config.allowsPictureInPictureMediaPlayback = true
+
+        // video playsinline + iframe allow 속성 주입 (web-main makeVideoScript 참조)
+        let js = """
+        (function() {
+            function processMedia(doc) {
+                if (!doc) return;
+                doc.querySelectorAll('video').forEach(function(v) {
+                    v.setAttribute('playsinline', '');
+                    v.setAttribute('webkit-playsinline', '');
+                });
+                doc.querySelectorAll('iframe').forEach(function(f) {
+                    var src = f.src || f.getAttribute('src') || '';
+                    if (src.indexOf('youtube') !== -1 || src.indexOf('youtu') !== -1) {
+                        f.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
+                        // src에 playsinline 파라미터 추가
+                        if (src.indexOf('playsinline') === -1) {
+                            f.src = src + (src.indexOf('?') !== -1 ? '&' : '?') + 'playsinline=1';
+                        }
+                    }
+                });
+            }
+            processMedia(document);
+            setInterval(function() {
+                processMedia(document);
+                document.querySelectorAll('iframe').forEach(function(fr) {
+                    try {
+                        var d = fr.contentDocument || (fr.contentWindow && fr.contentWindow.document);
+                        if (d) processMedia(d);
+                    } catch(e) {}
+                });
+            }, 1000);
+        })();
+        """
+        let script = WKUserScript(source: js, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+        let controller = WKUserContentController()
+        controller.addUserScript(script)
+        config.userContentController = controller
+
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.navigationDelegate = context.coordinator
         wv.isOpaque = false
