@@ -1,5 +1,8 @@
 import SwiftUI
 import WebKit
+import AVKit
+import AVFoundation
+import UIKit
 
 @MainActor
 class PostDetailViewModel: ObservableObject {
@@ -537,9 +540,9 @@ struct HTMLContentView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         // 미디어 재생 설정
-        config.allowsInlineMediaPlayback = true
+        config.allowsInlineMediaPlayback = false
         config.allowsPictureInPictureMediaPlayback = true
-        config.mediaTypesRequiringUserActionForPlayback = []   // web-main 방식: 첫 탭 소비 없이 YouTube 컨트롤 즉시 반응
+        config.mediaTypesRequiringUserActionForPlayback = .all
 
         // WKPreferences — Apple doc 확인: fullscreen + site quirks + JS popup
         config.preferences.isElementFullscreenEnabled = true
@@ -558,7 +561,7 @@ struct HTMLContentView: UIViewRepresentable {
                 doc.querySelectorAll('iframe').forEach(function(f) {
                     var src = f.src || f.getAttribute('src') || '';
                     if (src.indexOf('youtube') !== -1 || src.indexOf('youtu') !== -1) {
-                        f.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
+                        f.setAttribute('allow', 'encrypted-media; picture-in-picture; fullscreen');
                         if (src.indexOf('playsinline') === -1) {
                             f.src = src + (src.indexOf('?') !== -1 ? '&' : '?') + 'playsinline=1';
                         }
@@ -644,7 +647,69 @@ struct HTMLContentView: UIViewRepresentable {
 
         func webView(_ wv: WKWebView, decidePolicyFor action: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            decisionHandler(action.navigationType == .linkActivated ? .cancel : .allow)
+            guard action.navigationType == .linkActivated,
+                  let url = action.request.url else {
+                decisionHandler(.allow)
+                return
+            }
+
+            if isDirectMediaURL(url) {
+                playInNativePlayer(url: url)
+                decisionHandler(.cancel)
+                return
+            }
+
+            UIApplication.shared.open(url)
+            decisionHandler(.cancel)
+        }
+
+        private func isDirectMediaURL(_ url: URL) -> Bool {
+            let ext = url.pathExtension.lowercased()
+            if ["mp4", "m4v", "mov", "m3u8", "mp3", "m4a", "aac", "wav"].contains(ext) {
+                return true
+            }
+            let path = url.absoluteString.lowercased()
+            return path.contains(".m3u8") || path.contains(".mp4")
+        }
+
+        private func playInNativePlayer(url: URL) {
+            do {
+                try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
+                try AVAudioSession.sharedInstance().setActive(true)
+            } catch {
+                print("Native player audio session setup failed: \(error)")
+            }
+
+            let player = AVPlayer(url: url)
+            let vc = AVPlayerViewController()
+            vc.player = player
+            vc.modalPresentationStyle = .fullScreen
+            topViewController()?.present(vc, animated: true) {
+                player.play()
+            }
+        }
+
+        private func topViewController(base: UIViewController? = nil) -> UIViewController? {
+            let root: UIViewController? = {
+                if let base { return base }
+                let scenes = UIApplication.shared.connectedScenes
+                    .compactMap { $0 as? UIWindowScene }
+                let keyWindow = scenes
+                    .flatMap { $0.windows }
+                    .first(where: { $0.isKeyWindow })
+                return keyWindow?.rootViewController
+            }()
+
+            if let nav = root as? UINavigationController {
+                return topViewController(base: nav.visibleViewController)
+            }
+            if let tab = root as? UITabBarController, let selected = tab.selectedViewController {
+                return topViewController(base: selected)
+            }
+            if let presented = root?.presentedViewController {
+                return topViewController(base: presented)
+            }
+            return root
         }
     }
 }
