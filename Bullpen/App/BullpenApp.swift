@@ -28,11 +28,11 @@ struct BullpenApp: App {
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
                     applyAudioSession()
                 }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
-                applyAudioSession()
-            }
+                .onChange(of: scenePhase) { phase in
+                    if phase == .active {
+                        applyAudioSession()
+                    }
+                }
         }
     }
 }
