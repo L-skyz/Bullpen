@@ -536,10 +536,17 @@ struct HTMLContentView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        // 미디어 재생 설정
         config.allowsInlineMediaPlayback = true
         config.allowsPictureInPictureMediaPlayback = true
+        config.mediaTypesRequiringUserActionForPlayback = [.video, .audio]
 
-        // video playsinline + iframe allow 속성 주입 (web-main makeVideoScript 참조)
+        // WKPreferences — Apple doc 확인: fullscreen + site quirks + JS popup
+        config.preferences.isElementFullscreenEnabled = true
+        config.preferences.isSiteSpecificQuirksModeEnabled = true
+        config.preferences.javaScriptCanOpenWindowsAutomatically = true
+
+        // video playsinline + YouTube iframe allow/playsinline 주입
         let js = """
         (function() {
             function processMedia(doc) {
@@ -552,7 +559,6 @@ struct HTMLContentView: UIViewRepresentable {
                     var src = f.src || f.getAttribute('src') || '';
                     if (src.indexOf('youtube') !== -1 || src.indexOf('youtu') !== -1) {
                         f.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
-                        // src에 playsinline 파라미터 추가
                         if (src.indexOf('playsinline') === -1) {
                             f.src = src + (src.indexOf('?') !== -1 ? '&' : '?') + 'playsinline=1';
                         }
@@ -577,6 +583,8 @@ struct HTMLContentView: UIViewRepresentable {
         config.userContentController = controller
 
         let wv = WKWebView(frame: .zero, configuration: config)
+        // YouTube가 WKWebView를 차단하지 않도록 Mobile Safari UA로 위장
+        wv.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
         wv.navigationDelegate = context.coordinator
         wv.isOpaque = false
         wv.backgroundColor = .clear
