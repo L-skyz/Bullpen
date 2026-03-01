@@ -268,8 +268,19 @@ class MLBParkService {
             let bodyCls = (try? bodyEl.attr("class")) ?? ""
             let isOwn   = rowCls.contains("my_con") || bodyCls.contains("my_reply")
 
+            // 대댓글 prid: btn_replied의 viewReply(cls, prid, toSource) 중 첫 번째 숫자
+            // 최상위 댓글: prid == seq, 대댓글: prid == root seq
+            var replyPrid = seq
+            if let btn = try? row.select("a.btn_replied").first(),
+               let onclick = try? btn.attr("onclick"),
+               let range1 = onclick.range(of: #""(\d+)""#, options: .regularExpression) {
+                let inner = onclick[range1]
+                let digits = inner.filter { $0.isNumber }
+                if !digits.isEmpty { replyPrid = String(digits) }
+            }
+
             comments.append(Comment(
-                id: "\(postId)_c\(i)", seq: seq,
+                id: "\(postId)_c\(i)", seq: seq, replyPrid: replyPrid,
                 author: nick, avatarUrl: avatar,
                 date: cDate, ip: ip, content: text, isOwn: isOwn
             ))
@@ -345,7 +356,8 @@ class MLBParkService {
 
     // MARK: - 댓글쓰기
 
-    func writeComment(boardId: String, postId: String, content: String, parentSeq: String = "") async throws {
+    func writeComment(boardId: String, postId: String, content: String,
+                      parentPrid: String = "", parentSeq: String = "") async throws {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw MLBParkError.networkError("댓글 내용을 입력해주세요.")
@@ -368,8 +380,8 @@ class MLBParkService {
             "m":       "reply_INSERT",
             "b":       boardId,
             "id":      postId,
-            "prid":    parentSeq,
-            "source":  "",
+            "prid":    parentPrid,
+            "source":  parentSeq,
             "info":    "{\"replyId\":\"\"}",
             "content": trimmed,
         ])

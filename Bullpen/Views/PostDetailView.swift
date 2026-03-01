@@ -34,8 +34,12 @@ class PostDetailViewModel: ObservableObject {
         }
         isSubmittingComment = true
         do {
-            let parentSeq = replyingTo?.seq ?? ""
-            try await MLBParkService.shared.writeComment(boardId: boardId, postId: postId, content: trimmed, parentSeq: parentSeq)
+            let parentPrid = replyingTo?.replyPrid ?? ""
+            let parentSeq  = replyingTo?.seq ?? ""
+            try await MLBParkService.shared.writeComment(
+                boardId: boardId, postId: postId, content: trimmed,
+                parentPrid: parentPrid, parentSeq: parentSeq
+            )
             commentInput = ""
             replyingTo = nil
             await load(boardId: boardId, postId: postId)
