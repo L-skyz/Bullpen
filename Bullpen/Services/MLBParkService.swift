@@ -242,7 +242,11 @@ class MLBParkService {
         let commentCount = vals.count > 2 ? (Int(try vals.get(2).text()) ?? 0) : 0
 
         // 본문: div.ar_txt (사이드바/광고 제외한 순수 본문)
-        let contentHTML = try doc.select("div.ar_txt").first()?.html() ?? ""
+        // 프로토콜 없는 //youtube... src를 https://youtube...로 보정
+        var contentHTML = try doc.select("div.ar_txt").first()?.html() ?? ""
+        contentHTML = contentHTML.replacingOccurrences(
+            of: "src=\"//", with: "src=\"https://", options: .caseInsensitive
+        )
 
         // 댓글: reply row(div#reply_{seq}) 기준으로 파싱
         // 내 댓글은 my_con/my_reply, 타인 댓글은 other_con/other_reply 변형이 있어
