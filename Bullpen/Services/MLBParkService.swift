@@ -249,7 +249,8 @@ class MLBParkService {
         // row 단위로 잡아야 누락이 없다.
         struct FlatComment {
             var comment: Comment
-            var isNested: Bool  // replied_re 클래스 = 대댓글
+            var isNested: Bool      // replied or replied_re = 대댓글
+            var isRepliedRe: Bool   // replied_re = 답글의 답글 (replyPrid → 부모 replied seq)
         }
         var flatList: [FlatComment] = []
         let commentRows = try doc.select(".reply_list div[id^=reply_]")
@@ -278,8 +279,11 @@ class MLBParkService {
             let bodyCls = (try? bodyEl.attr("class")) ?? ""
             let isOwn   = rowCls.contains("my_con") || bodyCls.contains("my_reply")
 
-            // 대댓글 여부: replied_re 클래스
-            let isNested = rowCls.contains("replied_re") || bodyCls.contains("replied_re")
+            // 대댓글 여부: replied(직접 답글) 또는 replied_re(답글의 답글)
+            // — replied: replyPrid == own seq (DOM 순서상 이전 최상위 댓글의 자식)
+            // — replied_re: replyPrid == 부모 replied 항목의 seq
+            let isReplied   = rowCls.contains("replied")    || bodyCls.contains("replied")
+            let isNested    = isReplied
 
             // 대댓글 prid: btn_replied의 viewReply(cls, prid, toSource) 중 첫 번째 숫자
             // 최상위 댓글: prid == seq, 대댓글: prid == root seq
@@ -298,22 +302,34 @@ class MLBParkService {
                 date: cDate, ip: ip, content: text, isOwn: isOwn,
                 replyToAuthor: replyToAuthor
             )
-            flatList.append(FlatComment(comment: c, isNested: isNested))
+            let isRepliedRe = rowCls.contains("replied_re") || bodyCls.contains("replied_re")
+            flatList.append(FlatComment(comment: c, isNested: isNested, isRepliedRe: isRepliedRe))
         }
 
-        // 계층 구조 빌드: 대댓글을 root 댓글의 replies에 삽입
+        // 계층 구조 빌드
+        // — replied: 바로 이전 최상위 댓글의 자식 (replyPrid == own seq이라 부모 특정 불가 → 마지막 top에 추가)
+        // — replied_re: replyPrid가 부모 replied 항목의 seq → 해당 replied가 속한 top-level에 추가
         var topLevel: [Comment] = []
         for flat in flatList {
-            if flat.isNested {
-                // replyPrid == root 댓글의 seq
-                if let idx = topLevel.firstIndex(where: { $0.seq == flat.comment.replyPrid }) {
-                    topLevel[idx].replies.append(flat.comment)
-                } else {
-                    // root 못 찾으면 최상위 마지막에 붙임
-                    topLevel.append(flat.comment)
+            if !flat.isNested {
+                topLevel.append(flat.comment)
+            } else if flat.isRepliedRe {
+                // replyPrid → replied 항목을 보유한 top-level 찾기
+                if let tlIdx = topLevel.firstIndex(where: {
+                    $0.seq == flat.comment.replyPrid ||
+                    $0.replies.contains(where: { $0.seq == flat.comment.replyPrid })
+                }) {
+                    topLevel[tlIdx].replies.append(flat.comment)
+                } else if !topLevel.isEmpty {
+                    topLevel[topLevel.count - 1].replies.append(flat.comment)
                 }
             } else {
-                topLevel.append(flat.comment)
+                // replied: 마지막 top-level의 replies에 추가
+                if !topLevel.isEmpty {
+                    topLevel[topLevel.count - 1].replies.append(flat.comment)
+                } else {
+                    topLevel.append(flat.comment)
+                }
             }
         }
         let comments = topLevel
