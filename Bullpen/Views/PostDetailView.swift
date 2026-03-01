@@ -563,12 +563,11 @@ struct HTMLContentView: UIViewRepresentable {
           video { max-width: 100%; border-radius: 6px; }
           a    { color: #007AFF; text-decoration: none; }
           p    { margin: 6px 0; }
-          iframe { display: none !important; }
-          iframe[src*="youtube"], iframe[src*="youtu.be"] {
-            display: block !important;
-            width: 100% !important; aspect-ratio: 16/9;
-            min-height: 180px; border: none;
-            border-radius: 8px; margin: 10px auto; }
+          iframe {
+            width: 100% !important; max-width: 100%;
+            aspect-ratio: 16/9; min-height: 180px;
+            border: none; border-radius: 8px;
+            display: block; margin: 10px auto; }
           .kakao_ad_unit, .kakao_ad_area,
           [class*='adsbygoogle'], .powerlink, .ad_wrap,
           .icon_ad, .tool_cont { display: none !important; }
