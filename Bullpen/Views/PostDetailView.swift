@@ -235,18 +235,19 @@ struct PostDetailView: View {
                                 CommentRowView(
                                     comment: c,
                                     isPostAuthor: c.author.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        == d.author.trimmingCharacters(in: .whitespacesAndNewlines)
-                                ) {
-                                    // 수정
-                                    editCommentText  = c.content
-                                    editingComment   = c
-                                } onDelete: {
-                                    // 삭제 확인
-                                    deletingComment = c
-                                } onReply: auth.isLoggedIn ? {
-                                    vm.replyingTo = c
-                                    commentFocused = true
-                                } : nil
+                                        == d.author.trimmingCharacters(in: .whitespacesAndNewlines),
+                                    onEdit: {
+                                        editCommentText = c.content
+                                        editingComment  = c
+                                    },
+                                    onDelete: {
+                                        deletingComment = c
+                                    },
+                                    onReply: auth.isLoggedIn ? {
+                                        vm.replyingTo = c
+                                        commentFocused = true
+                                    } : nil
+                                )
                                 Divider().padding(.leading, 58)
                             }
                         }
