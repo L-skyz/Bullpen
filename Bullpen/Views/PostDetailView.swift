@@ -549,21 +549,50 @@ struct HTMLContentView: UIViewRepresentable {
         config.preferences.isSiteSpecificQuirksModeEnabled = true
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
 
-        // video playsinline + YouTube iframe allow/playsinline 주입
+        // 웹뷰 미디어는 강제 음소거 잠금(언뮤트 차단 목적)
         let js = """
         (function() {
+            function appendParam(src, key, value) {
+                if (src.indexOf(key + '=') !== -1) return src;
+                return src + (src.indexOf('?') !== -1 ? '&' : '?') + key + '=' + value;
+            }
+
+            function lockMuted(video) {
+                if (!video) return;
+                video.setAttribute('playsinline', '');
+                video.setAttribute('webkit-playsinline', '');
+                video.setAttribute('muted', '');
+                video.defaultMuted = true;
+                video.muted = true;
+                video.volume = 0;
+
+                if (!video.dataset.bpMutedLock) {
+                    video.addEventListener('volumechange', function() {
+                        if (!video.muted || video.volume > 0) {
+                            video.muted = true;
+                            video.volume = 0;
+                        }
+                    }, true);
+                    video.dataset.bpMutedLock = '1';
+                }
+            }
+
             function processMedia(doc) {
                 if (!doc) return;
                 doc.querySelectorAll('video').forEach(function(v) {
-                    v.setAttribute('playsinline', '');
-                    v.setAttribute('webkit-playsinline', '');
+                    lockMuted(v);
                 });
                 doc.querySelectorAll('iframe').forEach(function(f) {
                     var src = f.src || f.getAttribute('src') || '';
-                    if (src.indexOf('youtube') !== -1 || src.indexOf('youtu') !== -1) {
+                    var lower = src.toLowerCase();
+                    if (lower.indexOf('youtube') !== -1 || lower.indexOf('youtu') !== -1) {
                         f.setAttribute('allow', 'encrypted-media; picture-in-picture; fullscreen');
-                        if (src.indexOf('playsinline') === -1) {
-                            f.src = src + (src.indexOf('?') !== -1 ? '&' : '?') + 'playsinline=1';
+                        if (!f.dataset.bpMuteApplied) {
+                            src = appendParam(src, 'playsinline', '1');
+                            src = appendParam(src, 'mute', '1');
+                            src = appendParam(src, 'controls', '0');
+                            f.src = src;
+                            f.dataset.bpMuteApplied = '1';
                         }
                     }
                 });
