@@ -10,20 +10,22 @@ struct Comment: Identifiable {
     let ip: String
     let content: String
     let isOwn: Bool         // my_con 클래스 = 내 댓글
+    let replyToAuthor: String // 대댓글 대상 닉네임 (span.name_re 파싱)
     var replies: [Comment]
 
     init(id: String, seq: String = "", replyPrid: String = "", author: String, avatarUrl: String = "",
          date: String, ip: String, content: String,
-         isOwn: Bool = false, replies: [Comment] = []) {
-        self.id        = id
-        self.seq       = seq
-        self.replyPrid = replyPrid.isEmpty ? seq : replyPrid
-        self.author    = author
-        self.avatarUrl = avatarUrl
-        self.date      = date
-        self.ip        = ip
-        self.content   = content
-        self.isOwn     = isOwn
-        self.replies   = replies
+         isOwn: Bool = false, replyToAuthor: String = "", replies: [Comment] = []) {
+        self.id            = id
+        self.seq           = seq
+        self.replyPrid     = replyPrid.isEmpty ? seq : replyPrid
+        self.author        = author
+        self.avatarUrl     = avatarUrl
+        self.date          = date
+        self.ip            = ip
+        self.content       = content
+        self.isOwn         = isOwn
+        self.replyToAuthor = replyToAuthor
+        self.replies       = replies
     }
 }

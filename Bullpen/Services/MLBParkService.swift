@@ -247,7 +247,11 @@ class MLBParkService {
         // 댓글: reply row(div#reply_{seq}) 기준으로 파싱
         // 내 댓글은 my_con/my_reply, 타인 댓글은 other_con/other_reply 변형이 있어
         // row 단위로 잡아야 누락이 없다.
-        var comments: [Comment] = []
+        struct FlatComment {
+            var comment: Comment
+            var isNested: Bool  // replied_re 클래스 = 대댓글
+        }
+        var flatList: [FlatComment] = []
         let commentRows = try doc.select(".reply_list div[id^=reply_]")
         for (i, row) in commentRows.enumerated() {
             guard let bodyEl = try row.select(".other_reply, .my_reply").first() else { continue }
@@ -257,7 +261,13 @@ class MLBParkService {
             let avatar = try row.select("span.photo img").first()?.attr("src") ?? ""
             let cDate  = try bodyEl.select("span.date").first()?.text() ?? ""
             let ip     = try bodyEl.select("span.ip").first()?.text() ?? ""
-            let text   = try bodyEl.select("span.re_txt").first()?.text() ?? ""
+
+            // 대댓글 대상 닉네임: re_txt 내 span.name_re
+            let reTxtEl = try bodyEl.select("span.re_txt").first()
+            let replyToAuthor = try reTxtEl?.select("span.name_re").first()?.text() ?? ""
+            // name_re 제거 후 순수 텍스트 추출
+            try reTxtEl?.select("span.name_re").remove()
+            let text = try reTxtEl?.text() ?? ""
 
             // seq: row id = "reply_{seq}"
             let rowId = (try? row.attr("id")) ?? ""
@@ -267,6 +277,9 @@ class MLBParkService {
             let rowCls  = (try? row.attr("class")) ?? ""
             let bodyCls = (try? bodyEl.attr("class")) ?? ""
             let isOwn   = rowCls.contains("my_con") || bodyCls.contains("my_reply")
+
+            // 대댓글 여부: replied_re 클래스
+            let isNested = rowCls.contains("replied_re") || bodyCls.contains("replied_re")
 
             // 대댓글 prid: btn_replied의 viewReply(cls, prid, toSource) 중 첫 번째 숫자
             // 최상위 댓글: prid == seq, 대댓글: prid == root seq
@@ -279,12 +292,31 @@ class MLBParkService {
                 if !digits.isEmpty { replyPrid = String(digits) }
             }
 
-            comments.append(Comment(
+            let c = Comment(
                 id: "\(postId)_c\(i)", seq: seq, replyPrid: replyPrid,
                 author: nick, avatarUrl: avatar,
-                date: cDate, ip: ip, content: text, isOwn: isOwn
-            ))
+                date: cDate, ip: ip, content: text, isOwn: isOwn,
+                replyToAuthor: replyToAuthor
+            )
+            flatList.append(FlatComment(comment: c, isNested: isNested))
         }
+
+        // 계층 구조 빌드: 대댓글을 root 댓글의 replies에 삽입
+        var topLevel: [Comment] = []
+        for flat in flatList {
+            if flat.isNested {
+                // replyPrid == root 댓글의 seq
+                if let idx = topLevel.firstIndex(where: { $0.seq == flat.comment.replyPrid }) {
+                    topLevel[idx].replies.append(flat.comment)
+                } else {
+                    // root 못 찾으면 최상위 마지막에 붙임
+                    topLevel.append(flat.comment)
+                }
+            } else {
+                topLevel.append(flat.comment)
+            }
+        }
+        let comments = topLevel
 
         return PostDetail(
             id: postId,

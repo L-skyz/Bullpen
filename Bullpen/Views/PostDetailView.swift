@@ -670,6 +670,10 @@ struct CommentRowView: View {
                             Spacer()
                             Text(reply.date).font(.caption2).foregroundColor(.secondary)
                         }
+                        if !reply.replyToAuthor.isEmpty {
+                            Text("@\(reply.replyToAuthor)에게 답글")
+                                .font(.caption2).foregroundColor(.blue.opacity(0.8))
+                        }
                         Text(reply.content).font(.caption)
                     }
                 }
