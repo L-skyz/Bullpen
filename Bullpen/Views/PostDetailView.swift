@@ -276,13 +276,15 @@ struct PostDetailView: View {
                                     .padding(.horizontal).padding(.vertical, 6)
                                     .background(Color(.secondarySystemBackground))
                                 }
-                                HStack(spacing: 8) {
+                                HStack(alignment: .bottom, spacing: 8) {
                                     TextField(
                                         vm.replyingTo == nil ? "댓글을 입력하세요" : "답글을 입력하세요",
-                                        text: $vm.commentInput
+                                        text: $vm.commentInput,
+                                        axis: .vertical
                                     )
+                                    .lineLimit(3...6)
                                     .padding(.horizontal, 12)
-                                    .padding(.vertical, 12)
+                                    .padding(.vertical, 10)
                                     .background(Color(.secondarySystemBackground))
                                     .clipShape(RoundedRectangle(cornerRadius: 10))
                                     .focused($commentFocused)
