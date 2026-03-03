@@ -84,10 +84,10 @@ struct BestPostsView: View {
                         }
                     }
                 }
-                .scrollBounceBehavior(.always)
                 .refreshable {
                     await vm.load(type: vm.selectedType)
                 }
+                .scrollBounceBehavior(.always)
             }
         }
         .navigationTitle("베스트")

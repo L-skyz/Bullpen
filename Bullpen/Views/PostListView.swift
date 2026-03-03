@@ -106,12 +106,12 @@ struct PostListView: View {
                 if let err = vm.error { Text(err).foregroundColor(.red).font(.caption).padding() }
             }
         }
-        .scrollBounceBehavior(.always)
-        .scrollPosition($scrollPosition)
         .refreshable {
             scrollPosition = ScrollPosition(idType: String.self)
             await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true)
         }
+        .scrollBounceBehavior(.always)
+        .scrollPosition($scrollPosition)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {

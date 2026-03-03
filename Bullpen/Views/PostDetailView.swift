@@ -311,6 +311,9 @@ struct PostDetailView: View {
                         Spacer(minLength: 40)
                     }
                 }
+                .refreshable {
+                    await vm.load(boardId: boardId, postId: postId)
+                }
             } else if let err = vm.error {
                 ContentUnavailableView(err, systemImage: "exclamationmark.triangle")
             }
