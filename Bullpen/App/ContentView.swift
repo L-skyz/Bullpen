@@ -84,11 +84,12 @@ struct ContentView: View {
                         .transition(.move(edge: .leading))
                 }
             }
-            .overlay {
+            .overlay(alignment: .leading) {
                 EdgeOpenGestureView(
                     onOpen: { withAnimation(drawerSpring) { showDrawer = true } },
                     isEnabled: navPath.isEmpty && !showDrawer
                 )
+                .frame(width: 44, maxHeight: .infinity, alignment: .leading)
                 .ignoresSafeArea()
                 .allowsHitTesting(!showDrawer)
             }

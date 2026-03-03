@@ -22,6 +22,16 @@ enum MLBParkError: LocalizedError {
 @MainActor
 class MLBParkService {
     static let shared = MLBParkService()
+    private static let utf8Charsets: Set<String> = ["utf-8", "utf8"]
+    private static let legacyKoreanCharsets: Set<String> = [
+        "euc-kr",
+        "cp949",
+        "x-windows-949",
+        "windows-949",
+        "ks_c_5601-1987",
+        "ks-c-5601-1987",
+        "cseuckr"
+    ]
 
     private let base = "https://mlbpark.donga.com"
     private let session: URLSession
@@ -39,6 +49,46 @@ class MLBParkService {
             ) else { return nil }
             return cf as String
         }
+    }
+
+    static func decodeServerText(_ data: Data, response: URLResponse?) -> String? {
+        let declaredCharset = extractDeclaredCharset(data: data, response: response)
+
+        if let charset = declaredCharset, legacyKoreanCharsets.contains(charset) {
+            return decodeCP949(data) ?? String(decoding: data, as: UTF8.self)
+        }
+
+        if let charset = declaredCharset, utf8Charsets.contains(charset) {
+            // 엠팍이 UTF-8 헤더를 보내도 간헐적으로 깨진 바이트가 섞인다.
+            return String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
+        }
+
+        return String(data: data, encoding: .utf8)
+            ?? decodeCP949(data)
+            ?? String(decoding: data, as: UTF8.self)
+    }
+
+    private static func extractDeclaredCharset(data: Data, response: URLResponse?) -> String? {
+        if let contentType = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type"),
+           let headerCharset = extractCharset(from: contentType) {
+            return headerCharset
+        }
+
+        let head = String(decoding: data.prefix(4096), as: UTF8.self)
+        return extractCharset(from: head)
+    }
+
+    private static func extractCharset(from rawValue: String) -> String? {
+        let lowercased = rawValue.lowercased()
+        guard let range = lowercased.range(of: "charset=") else { return nil }
+
+        let tail = lowercased[range.upperBound...]
+        let trimmed = tail.drop(while: { $0 == " " || $0 == "\t" || $0 == "\r" || $0 == "\n" || $0 == "\"" || $0 == "'" })
+        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789-_")
+        let charset = trimmed.prefix { allowed.contains($0) }
+
+        guard !charset.isEmpty else { return nil }
+        return String(charset)
     }
 
     private init() {
@@ -75,25 +125,9 @@ class MLBParkService {
         req.setValue("ko-KR,ko;q=0.9", forHTTPHeaderField: "Accept-Language")
         let (data, response) = try await session.data(for: req)
 
-        // 1) HTTP Content-Type 헤더에서 charset 추출 (가장 신뢰성 높음)
-        let charset = (response as? HTTPURLResponse)?
-            .value(forHTTPHeaderField: "Content-Type")?
-            .components(separatedBy: "charset=").last?
-            .lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let html: String?
-        switch charset {
-        case "euc-kr", "x-windows-949", "ks_c_5601-1987", "cp949":
-            // 한국어 레거시 인코딩 → CFStringCreateWithBytes 직접 호출 (안정적)
-            html = Self.decodeCP949(data)
-        default:
-            // UTF-8 우선, 실패 시 CP949 (EUC-KR 헤더 누락 대비), 최후 Latin-1
-            html = String(data: data, encoding: .utf8)
-                ?? Self.decodeCP949(data)
-                ?? String(data: data, encoding: .isoLatin1)
+        guard let result = Self.decodeServerText(data, response: response) else {
+            throw MLBParkError.encodingError
         }
-
-        guard let result = html else { throw MLBParkError.encodingError }
         return result
     }
 
@@ -399,7 +433,7 @@ class MLBParkService {
             return
         }
 
-        let raw = String(data: data, encoding: .utf8)?
+        let raw = Self.decodeServerText(data, response: resp)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if raw.isEmpty {
             throw MLBParkError.networkError("게시글 등록 실패(빈 응답)")
@@ -444,7 +478,7 @@ class MLBParkService {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
 
-        let result = String(data: data, encoding: .utf8)?
+        let result = Self.decodeServerText(data, response: resp)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
         switch result {
@@ -509,7 +543,7 @@ class MLBParkService {
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
-        let body = String(data: data, encoding: .utf8) ?? ""
+        let body = Self.decodeServerText(data, response: resp) ?? ""
         if body.contains("nologin") || body.contains("error") || body.contains("fail") {
             throw MLBParkError.networkError("댓글 삭제 실패")
         }
@@ -554,7 +588,7 @@ class MLBParkService {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
 
-        let result = String(data: data, encoding: .utf8)?
+        let result = Self.decodeServerText(data, response: resp)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
         switch result {
@@ -611,7 +645,7 @@ class MLBParkService {
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
-        let body = String(data: data, encoding: .utf8) ?? ""
+        let body = Self.decodeServerText(data, response: resp) ?? ""
         if body.contains("nologin") || body.contains("permission") || body.contains("error") {
             throw MLBParkError.networkError("게시글 삭제 실패. 로그인 상태를 확인하세요.")
         }
@@ -665,7 +699,7 @@ class MLBParkService {
             return
         }
 
-        let raw = String(data: data, encoding: .utf8)?
+        let raw = Self.decodeServerText(data, response: resp)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if raw.isEmpty {
             throw MLBParkError.networkError("게시글 수정 실패(빈 응답)")
@@ -746,7 +780,7 @@ class MLBParkService {
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
-        let result = String(data: data, encoding: .utf8) ?? ""
+        let result = Self.decodeServerText(data, response: resp) ?? ""
         if result.contains("nologin") {
             throw MLBParkError.networkError("로그인이 필요합니다")
         }

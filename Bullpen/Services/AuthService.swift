@@ -71,7 +71,7 @@ class AuthService: ObservableObject {
         // 성공: 302 redirect → mlbpark.donga.com (URLSession 자동 팔로우)
         let finalHost = (resp as? HTTPURLResponse)?.url?.host ?? ""
         if finalHost.contains("secure.donga.com") || finalHost.isEmpty {
-            let html = String(data: data, encoding: .utf8) ?? ""
+            let html = MLBParkService.decodeServerText(data, response: resp) ?? ""
             if html.contains("회원이 아니시거나") || html.contains("비밀번호가 틀립니다") ||
                html.contains("layerPop") {
                 throw MLBParkError.networkError("아이디 또는 비밀번호가 올바르지 않습니다.")
