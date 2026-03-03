@@ -9,12 +9,30 @@ class PostListViewModel: ObservableObject {
     @Published var error: String?
     @Published var hasMore = true
     private var page = 1
+    private var generation = 0
+    private var loadingPages: Set<Int> = []
 
     func load(boardId: String, maemuri: String? = nil, reset: Bool = false) async {
+        if reset {
+            generation += 1
+            page = 1
+            hasMore = true
+            loadingPages.removeAll()
+        }
+
+        let currentGeneration = generation
         let startPage = reset ? 1 : page
-        if reset { hasMore = true }
         guard hasMore else { return }
-        isLoading = true; error = nil
+        guard reset || !loadingPages.contains(startPage) else { return }
+
+        loadingPages.insert(startPage)
+        isLoading = true
+        error = nil
+        defer {
+            loadingPages.remove(startPage)
+            isLoading = !loadingPages.isEmpty
+        }
+
         do {
             let newPosts: [Post]
             if let m = maemuri, !m.isEmpty {
@@ -22,14 +40,16 @@ class PostListViewModel: ObservableObject {
             } else {
                 newPosts = try await MLBParkService.shared.fetchPosts(boardId: boardId, page: startPage)
             }
-            if reset { posts = [] }
+
+            guard currentGeneration == generation else { return }
+
             page = startPage + 1
             if newPosts.isEmpty { hasMore = false }
-            posts.append(contentsOf: newPosts)
+            if reset { posts = newPosts }
+            else { posts.append(contentsOf: newPosts) }
         } catch is CancellationError {
         } catch let e as URLError where e.code == .cancelled {
         } catch { self.error = error.localizedDescription }
-        isLoading = false
     }
 }
 

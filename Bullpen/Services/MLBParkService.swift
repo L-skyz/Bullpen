@@ -96,6 +96,8 @@ class MLBParkService {
         config.httpCookieStorage = HTTPCookieStorage.shared
         config.httpShouldSetCookies = true
         config.httpCookieAcceptPolicy = .always
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.urlCache = nil
         session = URLSession(configuration: config)
     }
 
@@ -120,9 +122,12 @@ class MLBParkService {
         await warmupIfNeeded()
         guard let url = URL(string: urlStr) else { throw MLBParkError.invalidURL }
         var req = URLRequest(url: url)
+        req.cachePolicy = .reloadIgnoringLocalCacheData
         req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
         req.setValue(base, forHTTPHeaderField: "Referer")
         req.setValue("ko-KR,ko;q=0.9", forHTTPHeaderField: "Accept-Language")
+        req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        req.setValue("no-cache", forHTTPHeaderField: "Pragma")
         let (data, response) = try await session.data(for: req)
 
         guard let result = Self.decodeServerText(data, response: response) else {

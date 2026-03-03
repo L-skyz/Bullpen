@@ -30,8 +30,11 @@ class BestPostsViewModel: ObservableObject {
     @Published var sections: [Section] = bestBoards.map { Section(board: $0) }
     @Published var isLoading = false
     @Published var selectedType: BestType = .like
+    private var loadGeneration = 0
 
     func load(type: BestType) async {
+        loadGeneration += 1
+        let generation = loadGeneration
         isLoading = true
         sections = Self.bestBoards.map { Section(board: $0) }
         await withTaskGroup(of: (String, [Post]).self) { group in
@@ -42,11 +45,13 @@ class BestPostsViewModel: ObservableObject {
                 }
             }
             for await (boardId, posts) in group {
+                guard generation == loadGeneration else { continue }
                 if let idx = sections.firstIndex(where: { $0.board.id == boardId }) {
                     sections[idx].posts = posts
                 }
             }
         }
+        guard generation == loadGeneration else { return }
         isLoading = false
     }
 }
