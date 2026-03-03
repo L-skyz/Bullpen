@@ -1,5 +1,5 @@
 .DS_Store
-*.xcodeproj/
+*.xcodeproj/*
 !*.xcodeproj/project.pbxproj
 xcuserdata/
 build/
