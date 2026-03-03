@@ -89,7 +89,8 @@ struct ContentView: View {
                     onOpen: { withAnimation(drawerSpring) { showDrawer = true } },
                     isEnabled: navPath.isEmpty && !showDrawer
                 )
-                .frame(width: 44, maxHeight: .infinity, alignment: .leading)
+                .frame(width: 44, alignment: .leading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .ignoresSafeArea()
                 .allowsHitTesting(!showDrawer)
             }
