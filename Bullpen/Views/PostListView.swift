@@ -13,17 +13,19 @@ class PostListViewModel: ObservableObject {
     private var loadingPages: Set<Int> = []
 
     func load(boardId: String, maemuri: String? = nil, reset: Bool = false) async {
+        let log = AppLogger.shared
         if reset {
             generation += 1
             page = 1
             hasMore = true
             loadingPages.removeAll()
+            log.log("🔄 RESET board=\(boardId) gen=\(generation)")
         }
 
         let currentGeneration = generation
         let startPage = reset ? 1 : page
-        guard hasMore else { return }
-        guard reset || !loadingPages.contains(startPage) else { return }
+        guard hasMore else { log.log("❌ hasMore=false, return"); return }
+        guard reset || !loadingPages.contains(startPage) else { log.log("❌ loadingPages 중복 page=\(startPage)"); return }
 
         loadingPages.insert(startPage)
         isLoading = true
@@ -41,15 +43,27 @@ class PostListViewModel: ObservableObject {
                 newPosts = try await MLBParkService.shared.fetchPosts(boardId: boardId, page: startPage)
             }
 
-            guard currentGeneration == generation else { return }
+            guard currentGeneration == generation else {
+                log.log("❌ generation 불일치 captured=\(currentGeneration) current=\(generation)")
+                return
+            }
 
             page = startPage + 1
             if newPosts.isEmpty { hasMore = false }
-            if reset { posts = newPosts }
-            else { posts.append(contentsOf: newPosts) }
+            if reset {
+                log.log("✅ posts 교체 \(newPosts.count)개")
+                posts = newPosts
+            } else {
+                posts.append(contentsOf: newPosts)
+            }
         } catch is CancellationError {
+            log.log("⚠️ CancellationError (task 취소됨)")
         } catch let e as URLError where e.code == .cancelled {
-        } catch { self.error = error.localizedDescription }
+            log.log("⚠️ URLError cancelled")
+        } catch {
+            log.log("❌ 에러: \(error.localizedDescription)")
+            self.error = error.localizedDescription
+        }
     }
 }
 
