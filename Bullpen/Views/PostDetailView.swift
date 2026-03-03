@@ -2,6 +2,8 @@ import SwiftUI
 import WebKit
 import UIKit
 
+private let postAuthorHighlightBackground = Color.orange.opacity(0.16)
+
 @MainActor
 class PostDetailViewModel: ObservableObject {
     @Published var detail: PostDetail?
@@ -236,7 +238,7 @@ struct PostDetailView: View {
                             .font(.caption).foregroundColor(.secondary)
                         }
                         .padding()
-                        .background(Color(.secondarySystemBackground))
+                        .background(postAuthorHighlightBackground)
 
                         Divider()
 
@@ -762,7 +764,7 @@ struct CommentRowView: View {
                 }
             }
             .padding(.horizontal).padding(.vertical, 10)
-            .background(isPostAuthor ? Color.orange.opacity(0.16) : Color.clear)
+            .background(isPostAuthor ? postAuthorHighlightBackground : Color.clear)
 
             ForEach(comment.replies) { reply in
                 HStack(alignment: .top, spacing: 10) {
