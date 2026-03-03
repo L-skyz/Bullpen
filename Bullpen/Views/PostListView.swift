@@ -4,36 +4,50 @@ import SwiftUI
 
 @MainActor
 class PostListViewModel: ObservableObject {
+    private struct LoadKey: Hashable {
+        let generation: Int
+        let page: Int
+    }
+
     @Published var posts: [Post] = []
     @Published var isLoading = false
     @Published var error: String?
     @Published var hasMore = true
     private var page = 1
     private var generation = 0
-    private var loadingPages: Set<Int> = []
+    private var loadingPages: Set<LoadKey> = []
 
     func load(boardId: String, maemuri: String? = nil, reset: Bool = false) async {
+        await Task.detached(priority: reset ? .userInitiated : .utility) { [weak self] in
+            guard let self else { return }
+            await self.runLoad(boardId: boardId, maemuri: maemuri, reset: reset)
+        }.value
+    }
+
+    private func runLoad(boardId: String, maemuri: String? = nil, reset: Bool = false) async {
         let log = AppLogger.shared
         if reset {
             generation += 1
             page = 1
             hasMore = true
             loadingPages.removeAll()
+            isLoading = false
             log.log("🔄 RESET board=\(boardId) gen=\(generation)")
         }
 
         let currentGeneration = generation
         let startPage = reset ? 1 : page
+        let loadKey = LoadKey(generation: currentGeneration, page: startPage)
         let maemuriLabel = maemuri ?? "nil"
         let loadLabel = "board=\(boardId) page=\(startPage) reset=\(reset) maemuri=\(maemuriLabel) gen=\(currentGeneration)"
         guard hasMore else { log.log("❌ hasMore=false, return"); return }
-        guard reset || !loadingPages.contains(startPage) else { log.log("❌ loadingPages 중복 page=\(startPage)"); return }
+        guard reset || !loadingPages.contains(loadKey) else { log.log("❌ loadingPages 중복 page=\(startPage)"); return }
 
-        loadingPages.insert(startPage)
+        loadingPages.insert(loadKey)
         if !reset { isLoading = true }
         error = nil
         defer {
-            loadingPages.remove(startPage)
+            loadingPages.remove(loadKey)
             isLoading = !loadingPages.isEmpty
             log.log("📤 PostList.load end \(loadLabel) inFlight=\(loadingPages.count) taskCancelled=\(Task.isCancelled)")
         }
@@ -135,6 +149,10 @@ struct PostListView: View {
             let log = AppLogger.shared
             log.log("🔽 PostList.refreshable start board=\(board.id) maemuri=\(activeMaemuri ?? "nil")")
             await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true)
+            guard !Task.isCancelled else {
+                log.log("⚠️ PostList.refreshable cancelled board=\(board.id) maemuri=\(activeMaemuri ?? "nil")")
+                return
+            }
             scrollPosition = ScrollPosition(idType: String.self)
             log.log("🔼 PostList.refreshable end board=\(board.id) posts=\(vm.posts.count) taskCancelled=\(Task.isCancelled)")
         }
