@@ -107,8 +107,8 @@ struct PostListView: View {
             }
         }
         .refreshable {
-            scrollPosition = ScrollPosition(idType: String.self)
             await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true)
+            scrollPosition = ScrollPosition(idType: String.self)
         }
         .scrollBounceBehavior(.always)
         .scrollPosition($scrollPosition)

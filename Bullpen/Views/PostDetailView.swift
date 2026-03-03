@@ -145,9 +145,7 @@ struct PostDetailView: View {
 
     var body: some View {
         Group {
-            if vm.isLoading {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let d = vm.detail {
+            if let d = vm.detail {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
 
@@ -314,6 +312,8 @@ struct PostDetailView: View {
                 .refreshable {
                     await vm.load(boardId: boardId, postId: postId)
                 }
+            } else if vm.isLoading {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let err = vm.error {
                 ContentUnavailableView(err, systemImage: "exclamationmark.triangle")
             }
