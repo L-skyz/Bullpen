@@ -28,7 +28,7 @@ class PostListViewModel: ObservableObject {
         guard reset || !loadingPages.contains(startPage) else { log.log("❌ loadingPages 중복 page=\(startPage)"); return }
 
         loadingPages.insert(startPage)
-        isLoading = true
+        if !reset { isLoading = true }
         error = nil
         defer {
             loadingPages.remove(startPage)
