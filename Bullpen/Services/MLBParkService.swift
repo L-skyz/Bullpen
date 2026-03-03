@@ -37,6 +37,7 @@ class MLBParkService {
     private let base = "https://mlbpark.donga.com"
     private let session: URLSession
     private var warmedUp = false
+    private var requestSequence = 0
 
     // CP949 (= Windows-949 = kCFStringEncodingDOSKorean = 0x0422)
     // String(data:encoding:) 경로는 NSStringEncoding 변환 레이어를 거쳐 간헐적으로 실패함
@@ -102,6 +103,55 @@ class MLBParkService {
         session = URLSession(configuration: config)
     }
 
+    private func nextRequestID() -> Int {
+        requestSequence += 1
+        return requestSequence
+    }
+
+    private func elapsedString(since start: Date) -> String {
+        String(format: "%.3fs", Date().timeIntervalSince(start))
+    }
+
+    private func performRequest(_ req: URLRequest, label: String) async throws -> (Data, URLResponse) {
+        let requestID = nextRequestID()
+        let method = req.httpMethod ?? "GET"
+        let url = req.url?.absoluteString ?? "<nil>"
+        let referer = req.value(forHTTPHeaderField: "Referer") ?? "-"
+        let contentType = req.value(forHTTPHeaderField: "Content-Type") ?? "-"
+        let startedAt = Date()
+        let log = AppLogger.shared
+
+        log.log("🌐 [\(requestID)] START \(label) \(method) \(url)")
+        log.log("🌐 [\(requestID)] META referer=\(referer) contentType=\(contentType) taskCancelled=\(Task.isCancelled)")
+
+        return try await withTaskCancellationHandler(operation: {
+            do {
+                let (data, response) = try await session.data(for: req)
+                let elapsed = elapsedString(since: startedAt)
+                if let http = response as? HTTPURLResponse {
+                    log.log("✅ [\(requestID)] END \(label) status=\(http.statusCode) bytes=\(data.count) elapsed=\(elapsed)")
+                    log.log("✅ [\(requestID)] FINAL \(http.url?.absoluteString ?? url)")
+                } else {
+                    log.log("✅ [\(requestID)] END \(label) bytes=\(data.count) elapsed=\(elapsed)")
+                }
+                return (data, response)
+            } catch is CancellationError {
+                log.log("⚠️ [\(requestID)] CancellationError \(label) elapsed=\(elapsedString(since: startedAt)) taskCancelled=\(Task.isCancelled)")
+                throw CancellationError()
+            } catch let error as URLError where error.code == .cancelled {
+                log.log("⚠️ [\(requestID)] URLError.cancelled \(label) elapsed=\(elapsedString(since: startedAt)) taskCancelled=\(Task.isCancelled)")
+                throw error
+            } catch {
+                log.log("❌ [\(requestID)] FAIL \(label) elapsed=\(elapsedString(since: startedAt)) error=\(error.localizedDescription)")
+                throw error
+            }
+        }, onCancel: {
+            Task { @MainActor in
+                AppLogger.shared.log("⚠️ [\(requestID)] CANCEL SIGNAL \(label) elapsed=\(self.elapsedString(since: startedAt)) url=\(url)")
+            }
+        })
+    }
+
     // gather.donga.com 쿠키 없으면 mlbpark이 테이블 없는 JS 페이지만 반환
     private func warmupIfNeeded() async {
         guard !warmedUp else { return }
@@ -109,7 +159,7 @@ class MLBParkService {
         guard let url = URL(string: "https://gather.donga.com/?cookie=1") else { return }
         var req = URLRequest(url: url)
         req.setValue("https://mlbpark.donga.com/", forHTTPHeaderField: "Referer")
-        _ = try? await session.data(for: req)
+        _ = try? await performRequest(req, label: "warmup")
     }
 
     // MARK: - 공통 요청
@@ -129,7 +179,7 @@ class MLBParkService {
         req.setValue("ko-KR,ko;q=0.9", forHTTPHeaderField: "Accept-Language")
         req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         req.setValue("no-cache", forHTTPHeaderField: "Pragma")
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await performRequest(req, label: "fetchHTML")
 
         guard let result = Self.decodeServerText(data, response: response) else {
             throw MLBParkError.encodingError
@@ -426,7 +476,7 @@ class MLBParkService {
             "info":     info,
         ])
 
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await performRequest(req, label: "writePost")
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
@@ -479,7 +529,7 @@ class MLBParkService {
             "content": trimmed,
         ])
 
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await performRequest(req, label: "writeComment")
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
@@ -545,7 +595,7 @@ class MLBParkService {
             "info": "{\"replyId\":\"\(commentSeq)\"}",
         ])
 
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await performRequest(req, label: "deleteComment")
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
@@ -589,7 +639,7 @@ class MLBParkService {
             "content": trimmed,
         ])
 
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await performRequest(req, label: "editComment")
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
@@ -647,7 +697,7 @@ class MLBParkService {
         req.setValue("\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=view", forHTTPHeaderField: "Referer")
         req.httpBody = "m=board_DELETE&b=\(boardId)&id=\(postId)&info=%7B%22notice%22%3A%22%22%7D"
             .data(using: .utf8)
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await performRequest(req, label: "deletePost")
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
@@ -692,7 +742,7 @@ class MLBParkService {
             "info":     info,
         ])
 
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await performRequest(req, label: "editPost")
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }
@@ -782,7 +832,7 @@ class MLBParkService {
         var req = URLRequest(url: url)
         req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
         req.setValue("\(base)/mp/dugout.php", forHTTPHeaderField: "Referer")
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await performRequest(req, label: "deleteDugoutItem")
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw MLBParkError.networkError("HTTP \(http.statusCode)")
         }

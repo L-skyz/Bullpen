@@ -24,6 +24,8 @@ class PostListViewModel: ObservableObject {
 
         let currentGeneration = generation
         let startPage = reset ? 1 : page
+        let maemuriLabel = maemuri ?? "nil"
+        let loadLabel = "board=\(boardId) page=\(startPage) reset=\(reset) maemuri=\(maemuriLabel) gen=\(currentGeneration)"
         guard hasMore else { log.log("❌ hasMore=false, return"); return }
         guard reset || !loadingPages.contains(startPage) else { log.log("❌ loadingPages 중복 page=\(startPage)"); return }
 
@@ -33,37 +35,46 @@ class PostListViewModel: ObservableObject {
         defer {
             loadingPages.remove(startPage)
             isLoading = !loadingPages.isEmpty
+            log.log("📤 PostList.load end \(loadLabel) inFlight=\(loadingPages.count) taskCancelled=\(Task.isCancelled)")
         }
 
-        do {
-            let newPosts: [Post]
-            if let m = maemuri, !m.isEmpty {
-                newPosts = try await MLBParkService.shared.fetchPostsByMaemuri(boardId: boardId, maemuri: m, page: startPage)
-            } else {
-                newPosts = try await MLBParkService.shared.fetchPosts(boardId: boardId, page: startPage)
-            }
+        log.log("📥 PostList.load start \(loadLabel) taskCancelled=\(Task.isCancelled)")
+        await withTaskCancellationHandler(operation: {
+            do {
+                let newPosts: [Post]
+                if let m = maemuri, !m.isEmpty {
+                    newPosts = try await MLBParkService.shared.fetchPostsByMaemuri(boardId: boardId, maemuri: m, page: startPage)
+                } else {
+                    newPosts = try await MLBParkService.shared.fetchPosts(boardId: boardId, page: startPage)
+                }
 
-            guard currentGeneration == generation else {
-                log.log("❌ generation 불일치 captured=\(currentGeneration) current=\(generation)")
-                return
-            }
+                guard currentGeneration == generation else {
+                    log.log("❌ generation 불일치 captured=\(currentGeneration) current=\(generation)")
+                    return
+                }
 
-            page = startPage + 1
-            if newPosts.isEmpty { hasMore = false }
-            if reset {
-                log.log("✅ posts 교체 \(newPosts.count)개")
-                posts = newPosts
-            } else {
-                posts.append(contentsOf: newPosts)
+                page = startPage + 1
+                if newPosts.isEmpty { hasMore = false }
+                if reset {
+                    log.log("✅ PostList.load replace count=\(newPosts.count) nextPage=\(page)")
+                    posts = newPosts
+                } else {
+                    log.log("✅ PostList.load append count=\(newPosts.count) nextPage=\(page)")
+                    posts.append(contentsOf: newPosts)
+                }
+            } catch is CancellationError {
+                log.log("⚠️ PostList.load CancellationError \(loadLabel)")
+            } catch let e as URLError where e.code == .cancelled {
+                log.log("⚠️ PostList.load URLError.cancelled \(loadLabel)")
+            } catch {
+                log.log("❌ PostList.load error \(loadLabel) error=\(error.localizedDescription)")
+                self.error = error.localizedDescription
             }
-        } catch is CancellationError {
-            log.log("⚠️ CancellationError (task 취소됨)")
-        } catch let e as URLError where e.code == .cancelled {
-            log.log("⚠️ URLError cancelled")
-        } catch {
-            log.log("❌ 에러: \(error.localizedDescription)")
-            self.error = error.localizedDescription
-        }
+        }, onCancel: {
+            Task { @MainActor in
+                AppLogger.shared.log("⚠️ PostList.load cancel signal \(loadLabel)")
+            }
+        })
     }
 }
 
@@ -121,8 +132,11 @@ struct PostListView: View {
             }
         }
         .refreshable {
+            let log = AppLogger.shared
+            log.log("🔽 PostList.refreshable start board=\(board.id) maemuri=\(activeMaemuri ?? "nil")")
             await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true)
             scrollPosition = ScrollPosition(idType: String.self)
+            log.log("🔼 PostList.refreshable end board=\(board.id) posts=\(vm.posts.count) taskCancelled=\(Task.isCancelled)")
         }
         .scrollBounceBehavior(.always)
         .scrollPosition($scrollPosition)
@@ -176,10 +190,19 @@ struct PostListView: View {
         } message: {
             Text("성인 콘텐츠는 로그인 후 이용할 수 있습니다.")
         }
+        .onAppear {
+            AppLogger.shared.log("👀 PostListView appear board=\(board.id)")
+        }
+        .onDisappear {
+            AppLogger.shared.log("👋 PostListView disappear board=\(board.id)")
+        }
         .task(id: board.id) {
+            let log = AppLogger.shared
+            log.log("▶️ PostList.task start board=\(board.id)")
             selectedMaemuri = "전체"
             scrollPosition = ScrollPosition(idType: String.self)
             await vm.load(boardId: board.id, reset: true)
+            log.log("⏹️ PostList.task end board=\(board.id) posts=\(vm.posts.count) taskCancelled=\(Task.isCancelled)")
         }
     }
 

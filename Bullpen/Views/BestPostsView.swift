@@ -33,26 +33,40 @@ class BestPostsViewModel: ObservableObject {
     private var loadGeneration = 0
 
     func load(type: BestType) async {
+        let log = AppLogger.shared
         loadGeneration += 1
         let generation = loadGeneration
-        isLoading = true
-        sections = Self.bestBoards.map { Section(board: $0) }
-        await withTaskGroup(of: (String, [Post]).self) { group in
-            for board in Self.bestBoards {
-                group.addTask {
-                    let posts = (try? await MLBParkService.shared.fetchBestPosts(boardId: board.id, type: type.param)) ?? []
-                    return (board.id, posts)
+        let typeParam = type.param
+        log.log("📥 Best.load start type=\(typeParam) gen=\(generation) taskCancelled=\(Task.isCancelled)")
+
+        await withTaskCancellationHandler(operation: {
+            isLoading = true
+            sections = Self.bestBoards.map { Section(board: $0) }
+            await withTaskGroup(of: (String, [Post]).self) { group in
+                for board in Self.bestBoards {
+                    group.addTask {
+                        let posts = (try? await MLBParkService.shared.fetchBestPosts(boardId: board.id, type: typeParam)) ?? []
+                        return (board.id, posts)
+                    }
+                }
+                for await (boardId, posts) in group {
+                    guard generation == loadGeneration else {
+                        log.log("⚠️ Best.load generation drop captured=\(generation) current=\(loadGeneration)")
+                        continue
+                    }
+                    if let idx = sections.firstIndex(where: { $0.board.id == boardId }) {
+                        sections[idx].posts = posts
+                    }
                 }
             }
-            for await (boardId, posts) in group {
-                guard generation == loadGeneration else { continue }
-                if let idx = sections.firstIndex(where: { $0.board.id == boardId }) {
-                    sections[idx].posts = posts
-                }
+            guard generation == loadGeneration else { return }
+            isLoading = false
+            log.log("✅ Best.load end type=\(typeParam) gen=\(generation)")
+        }, onCancel: {
+            Task { @MainActor in
+                AppLogger.shared.log("⚠️ Best.load cancel signal type=\(typeParam) gen=\(generation)")
             }
-        }
-        guard generation == loadGeneration else { return }
-        isLoading = false
+        })
     }
 }
 
@@ -85,19 +99,38 @@ struct BestPostsView: View {
                     }
                 }
                 .refreshable {
+                    let log = AppLogger.shared
+                    log.log("🔽 Best.refreshable start type=\(vm.selectedType.param)")
                     await vm.load(type: vm.selectedType)
+                    log.log("🔼 Best.refreshable end type=\(vm.selectedType.param) taskCancelled=\(Task.isCancelled)")
                 }
                 .scrollBounceBehavior(.always)
             }
         }
         .navigationTitle("베스트")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            AppLogger.shared.log("👀 BestPostsView appear")
+        }
+        .onDisappear {
+            AppLogger.shared.log("👋 BestPostsView disappear")
+        }
         .navigationDestination(for: Post.self) { post in
             PostDetailView(boardId: post.boardId, postId: post.id)
         }
-        .task { await vm.load(type: vm.selectedType) }
+        .task {
+            let log = AppLogger.shared
+            log.log("▶️ Best.task start type=\(vm.selectedType.param)")
+            await vm.load(type: vm.selectedType)
+            log.log("⏹️ Best.task end type=\(vm.selectedType.param) taskCancelled=\(Task.isCancelled)")
+        }
         .onChange(of: vm.selectedType) { _, newType in
-            Task { await vm.load(type: newType) }
+            AppLogger.shared.log("🎛️ Best.selectedType -> \(newType.param)")
+            Task {
+                AppLogger.shared.log("▶️ Best.onChange task start type=\(newType.param)")
+                await vm.load(type: newType)
+                AppLogger.shared.log("⏹️ Best.onChange task end type=\(newType.param) taskCancelled=\(Task.isCancelled)")
+            }
         }
     }
 }

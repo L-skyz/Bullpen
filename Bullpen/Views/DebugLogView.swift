@@ -10,7 +10,7 @@ final class AppLogger: ObservableObject {
     func log(_ msg: String) {
         let time = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
         logs.insert("[\(time)] \(msg)", at: 0)
-        if logs.count > 200 { logs.removeLast() }
+        if logs.count > 500 { logs.removeLast() }
     }
 
     func clear() { logs.removeAll() }

@@ -54,14 +54,70 @@ struct DugoutView: View {
     let source: String   // "my" | "mycomment"
 
     @StateObject private var vm = DugoutViewModel()
+    @StateObject private var logger = AppLogger.shared
     @State private var editMode: EditMode = .inactive
     @State private var selectedIds: Set<String> = []
     @State private var confirmBulkDelete = false
     @State private var navigateItem: DugoutItem? = nil
+    @State private var showLogs = true
 
     private var navTitle: String { source == "my" ? "내 게시글" : "내 댓글" }
 
     var body: some View {
+        VStack(spacing: 0) {
+            dugoutList
+            debugLogPanel
+        }
+        .navigationDestination(item: $navigateItem) { item in
+            PostDetailView(boardId: item.boardId, postId: item.originalPostId)
+        }
+        .navigationTitle(navTitle)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                EditButton()
+            }
+            ToolbarItemGroup(placement: .bottomBar) {
+                if editMode == .active {
+                    Button("전체 선택") {
+                        selectedIds = Set(vm.items.map { $0.id })
+                    }
+                    .font(.subheadline)
+                    Spacer()
+                    Button {
+                        guard !selectedIds.isEmpty else { return }
+                        confirmBulkDelete = true
+                    } label: {
+                        Text(selectedIds.isEmpty ? "선택 삭제" : "삭제 (\(selectedIds.count))")
+                            .font(.subheadline)
+                            .foregroundColor(selectedIds.isEmpty ? .secondary : .red)
+                    }
+                    .disabled(selectedIds.isEmpty)
+                }
+            }
+        }
+        .confirmationDialog(
+            "\(selectedIds.count)개를 삭제하시겠습니까?",
+            isPresented: $confirmBulkDelete,
+            titleVisibility: .visible
+        ) {
+            Button("삭제", role: .destructive) {
+                let ids = selectedIds
+                selectedIds = []
+                editMode = .inactive
+                Task { await vm.deleteSelected(ids) }
+            }
+        }
+        .onAppear {
+            AppLogger.shared.log("👀 DugoutView appear source=\(source)")
+        }
+        .onDisappear {
+            AppLogger.shared.log("👋 DugoutView disappear source=\(source)")
+        }
+        .task { await vm.load(source: source, reset: true) }
+    }
+
+    private var dugoutList: some View {
         List(selection: $selectedIds) {
             ForEach(vm.items) { item in
                 Button {
@@ -104,46 +160,6 @@ struct DugoutView: View {
         }
         .listStyle(.plain)
         .environment(\.editMode, $editMode)
-        .navigationDestination(item: $navigateItem) { item in
-            PostDetailView(boardId: item.boardId, postId: item.originalPostId)
-        }
-        .navigationTitle(navTitle)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                EditButton()
-            }
-            ToolbarItemGroup(placement: .bottomBar) {
-                if editMode == .active {
-                    Button("전체 선택") {
-                        selectedIds = Set(vm.items.map { $0.id })
-                    }
-                    .font(.subheadline)
-                    Spacer()
-                    Button {
-                        guard !selectedIds.isEmpty else { return }
-                        confirmBulkDelete = true
-                    } label: {
-                        Text(selectedIds.isEmpty ? "선택 삭제" : "삭제 (\(selectedIds.count))")
-                            .font(.subheadline)
-                            .foregroundColor(selectedIds.isEmpty ? .secondary : .red)
-                    }
-                    .disabled(selectedIds.isEmpty)
-                }
-            }
-        }
-        .confirmationDialog(
-            "\(selectedIds.count)개를 삭제하시겠습니까?",
-            isPresented: $confirmBulkDelete,
-            titleVisibility: .visible
-        ) {
-            Button("삭제", role: .destructive) {
-                let ids = selectedIds
-                selectedIds = []
-                editMode = .inactive
-                Task { await vm.deleteSelected(ids) }
-            }
-        }
         .overlay {
             if vm.items.isEmpty && !vm.isLoading {
                 VStack(spacing: 12) {
@@ -154,7 +170,74 @@ struct DugoutView: View {
                 }
             }
         }
-        .task { await vm.load(source: source, reset: true) }
+    }
+
+    private var visibleLogs: [String] {
+        Array(logger.logs.prefix(80))
+    }
+
+    private var debugLogPanel: some View {
+        VStack(spacing: 0) {
+            Divider()
+            HStack(spacing: 10) {
+                Button {
+                    showLogs.toggle()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: showLogs ? "chevron.down" : "chevron.right")
+                            .font(.caption)
+                        Text("네트워크 로그")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Text("\(logger.logs.count)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundColor(.secondary)
+
+                if !logger.logs.isEmpty {
+                    Button("지우기") {
+                        logger.clear()
+                    }
+                    .font(.caption)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color(.secondarySystemBackground))
+
+            if showLogs {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        if visibleLogs.isEmpty {
+                            Text("로그 없음")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else {
+                            ForEach(Array(visibleLogs.enumerated()), id: \.offset) { _, line in
+                                Text(line)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(logColor(for: line))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                    .padding(12)
+                }
+                .frame(maxHeight: 240)
+                .background(Color(.systemBackground))
+            }
+        }
+    }
+
+    private func logColor(for line: String) -> Color {
+        if line.contains("❌") { return .red }
+        if line.contains("⚠️") { return .orange }
+        if line.contains("✅") { return .green }
+        return .primary
     }
 }
 
