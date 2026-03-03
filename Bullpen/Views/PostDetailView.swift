@@ -11,33 +11,37 @@ class PostDetailViewModel: ObservableObject {
     @Published var isSubmittingComment = false
     @Published var actionError: String?
     @Published var replyingTo: Comment? = nil
+    private var loadGeneration = 0
 
     func load(boardId: String, postId: String) async {
-        let log = AppLogger.shared
-        let loadLabel = "board=\(boardId) post=\(postId)"
-        log.log("📥 PostDetail.load start \(loadLabel) taskCancelled=\(Task.isCancelled)")
+        loadGeneration += 1
+        let generation = loadGeneration
 
-        await withTaskCancellationHandler(operation: {
-            isLoading = true
-            error = nil
-            do {
-                detail = try await MLBParkService.shared.fetchPostDetail(boardId: boardId, postId: postId)
-                log.log("✅ PostDetail.load success \(loadLabel) comments=\(detail?.comments.count ?? 0)")
-            } catch is CancellationError {
-                log.log("⚠️ PostDetail.load CancellationError \(loadLabel)")
-            } catch let e as URLError where e.code == .cancelled {
-                log.log("⚠️ PostDetail.load URLError.cancelled \(loadLabel)")
-            } catch {
-                log.log("❌ PostDetail.load error \(loadLabel) error=\(error.localizedDescription)")
-                self.error = error.localizedDescription
+        await Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            await self.runLoad(boardId: boardId, postId: postId, generation: generation)
+        }.value
+    }
+
+    private func runLoad(boardId: String, postId: String, generation: Int) async {
+        isLoading = true
+        error = nil
+        defer {
+            if generation == loadGeneration {
+                isLoading = false
             }
-            isLoading = false
-            log.log("📤 PostDetail.load end \(loadLabel) taskCancelled=\(Task.isCancelled)")
-        }, onCancel: {
-            Task { @MainActor in
-                AppLogger.shared.log("⚠️ PostDetail.load cancel signal \(loadLabel)")
-            }
-        })
+        }
+
+        do {
+            let detail = try await MLBParkService.shared.fetchPostDetail(boardId: boardId, postId: postId)
+            guard generation == loadGeneration else { return }
+            self.detail = detail
+        } catch is CancellationError {
+        } catch let e as URLError where e.code == .cancelled {
+        } catch {
+            guard generation == loadGeneration else { return }
+            self.error = error.localizedDescription
+        }
     }
 
     func submitComment(boardId: String, postId: String) async {
@@ -328,10 +332,7 @@ struct PostDetailView: View {
                     }
                 }
                 .refreshable {
-                    let log = AppLogger.shared
-                    log.log("🔽 PostDetail.refreshable start board=\(boardId) post=\(postId)")
                     await vm.load(boardId: boardId, postId: postId)
-                    log.log("🔼 PostDetail.refreshable end board=\(boardId) post=\(postId) taskCancelled=\(Task.isCancelled)")
                 }
             } else if vm.isLoading {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -342,17 +343,8 @@ struct PostDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .background(SwipeBackEnabler())
-        .onAppear {
-            AppLogger.shared.log("👀 PostDetailView appear board=\(boardId) post=\(postId)")
-        }
-        .onDisappear {
-            AppLogger.shared.log("👋 PostDetailView disappear board=\(boardId) post=\(postId)")
-        }
         .task {
-            let log = AppLogger.shared
-            log.log("▶️ PostDetail.task start board=\(boardId) post=\(postId)")
             await vm.load(boardId: boardId, postId: postId)
-            log.log("⏹️ PostDetail.task end board=\(boardId) post=\(postId) taskCancelled=\(Task.isCancelled)")
         }
         // 게시글 삭제 확인
         .confirmationDialog("게시글을 삭제하시겠습니까?",

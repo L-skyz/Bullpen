@@ -67,13 +67,6 @@ struct ProfileView: View {
                 }
             }
 
-            // ── 디버그 ──
-            Section {
-                NavigationLink(destination: DebugLogView()) {
-                    Label("디버그 로그", systemImage: "terminal")
-                }
-            }
-
             // ── 로그아웃 ──
             Section {
                 Button(role: .destructive) {

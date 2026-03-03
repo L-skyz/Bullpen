@@ -54,20 +54,15 @@ struct DugoutView: View {
     let source: String   // "my" | "mycomment"
 
     @StateObject private var vm = DugoutViewModel()
-    @StateObject private var logger = AppLogger.shared
     @State private var editMode: EditMode = .inactive
     @State private var selectedIds: Set<String> = []
     @State private var confirmBulkDelete = false
     @State private var navigateItem: DugoutItem? = nil
-    @State private var showLogs = true
 
     private var navTitle: String { source == "my" ? "내 게시글" : "내 댓글" }
 
     var body: some View {
-        VStack(spacing: 0) {
-            dugoutList
-            debugLogPanel
-        }
+        dugoutList
         .navigationDestination(item: $navigateItem) { item in
             PostDetailView(boardId: item.boardId, postId: item.originalPostId)
         }
@@ -107,12 +102,6 @@ struct DugoutView: View {
                 editMode = .inactive
                 Task { await vm.deleteSelected(ids) }
             }
-        }
-        .onAppear {
-            AppLogger.shared.log("👀 DugoutView appear source=\(source)")
-        }
-        .onDisappear {
-            AppLogger.shared.log("👋 DugoutView disappear source=\(source)")
         }
         .task { await vm.load(source: source, reset: true) }
     }
@@ -170,74 +159,6 @@ struct DugoutView: View {
                 }
             }
         }
-    }
-
-    private var visibleLogs: [String] {
-        Array(logger.logs.prefix(80))
-    }
-
-    private var debugLogPanel: some View {
-        VStack(spacing: 0) {
-            Divider()
-            HStack(spacing: 10) {
-                Button {
-                    showLogs.toggle()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: showLogs ? "chevron.down" : "chevron.right")
-                            .font(.caption)
-                        Text("네트워크 로그")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                Text("\(logger.logs.count)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundColor(.secondary)
-
-                if !logger.logs.isEmpty {
-                    Button("지우기") {
-                        logger.clear()
-                    }
-                    .font(.caption)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Color(.secondarySystemBackground))
-
-            if showLogs {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 6) {
-                        if visibleLogs.isEmpty {
-                            Text("로그 없음")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        } else {
-                            ForEach(Array(visibleLogs.enumerated()), id: \.offset) { _, line in
-                                Text(line)
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(logColor(for: line))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                    }
-                    .padding(12)
-                }
-                .frame(maxHeight: 240)
-                .background(Color(.systemBackground))
-            }
-        }
-    }
-
-    private func logColor(for line: String) -> Color {
-        if line.contains("❌") { return .red }
-        if line.contains("⚠️") { return .orange }
-        if line.contains("✅") { return .green }
-        return .primary
     }
 }
 

@@ -25,23 +25,19 @@ class PostListViewModel: ObservableObject {
     }
 
     private func runLoad(boardId: String, maemuri: String? = nil, reset: Bool = false) async {
-        let log = AppLogger.shared
         if reset {
             generation += 1
             page = 1
             hasMore = true
             loadingPages.removeAll()
             isLoading = false
-            log.log("🔄 RESET board=\(boardId) gen=\(generation)")
         }
 
         let currentGeneration = generation
         let startPage = reset ? 1 : page
         let loadKey = LoadKey(generation: currentGeneration, page: startPage)
-        let maemuriLabel = maemuri ?? "nil"
-        let loadLabel = "board=\(boardId) page=\(startPage) reset=\(reset) maemuri=\(maemuriLabel) gen=\(currentGeneration)"
-        guard hasMore else { log.log("❌ hasMore=false, return"); return }
-        guard reset || !loadingPages.contains(loadKey) else { log.log("❌ loadingPages 중복 page=\(startPage)"); return }
+        guard hasMore else { return }
+        guard reset || !loadingPages.contains(loadKey) else { return }
 
         loadingPages.insert(loadKey)
         if !reset { isLoading = true }
@@ -49,46 +45,30 @@ class PostListViewModel: ObservableObject {
         defer {
             loadingPages.remove(loadKey)
             isLoading = !loadingPages.isEmpty
-            log.log("📤 PostList.load end \(loadLabel) inFlight=\(loadingPages.count) taskCancelled=\(Task.isCancelled)")
         }
 
-        log.log("📥 PostList.load start \(loadLabel) taskCancelled=\(Task.isCancelled)")
-        await withTaskCancellationHandler(operation: {
-            do {
-                let newPosts: [Post]
-                if let m = maemuri, !m.isEmpty {
-                    newPosts = try await MLBParkService.shared.fetchPostsByMaemuri(boardId: boardId, maemuri: m, page: startPage)
-                } else {
-                    newPosts = try await MLBParkService.shared.fetchPosts(boardId: boardId, page: startPage)
-                }
-
-                guard currentGeneration == generation else {
-                    log.log("❌ generation 불일치 captured=\(currentGeneration) current=\(generation)")
-                    return
-                }
-
-                page = startPage + 1
-                if newPosts.isEmpty { hasMore = false }
-                if reset {
-                    log.log("✅ PostList.load replace count=\(newPosts.count) nextPage=\(page)")
-                    posts = newPosts
-                } else {
-                    log.log("✅ PostList.load append count=\(newPosts.count) nextPage=\(page)")
-                    posts.append(contentsOf: newPosts)
-                }
-            } catch is CancellationError {
-                log.log("⚠️ PostList.load CancellationError \(loadLabel)")
-            } catch let e as URLError where e.code == .cancelled {
-                log.log("⚠️ PostList.load URLError.cancelled \(loadLabel)")
-            } catch {
-                log.log("❌ PostList.load error \(loadLabel) error=\(error.localizedDescription)")
-                self.error = error.localizedDescription
+        do {
+            let newPosts: [Post]
+            if let m = maemuri, !m.isEmpty {
+                newPosts = try await MLBParkService.shared.fetchPostsByMaemuri(boardId: boardId, maemuri: m, page: startPage)
+            } else {
+                newPosts = try await MLBParkService.shared.fetchPosts(boardId: boardId, page: startPage)
             }
-        }, onCancel: {
-            Task { @MainActor in
-                AppLogger.shared.log("⚠️ PostList.load cancel signal \(loadLabel)")
+
+            guard currentGeneration == generation else { return }
+
+            page = startPage + 1
+            if newPosts.isEmpty { hasMore = false }
+            if reset {
+                posts = newPosts
+            } else {
+                posts.append(contentsOf: newPosts)
             }
-        })
+        } catch is CancellationError {
+        } catch let e as URLError where e.code == .cancelled {
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 }
 
@@ -99,6 +79,7 @@ struct PostListView: View {
     @StateObject private var vm = PostListViewModel()
     @State private var selectedMaemuri = "전체"
     @State private var scrollPosition = ScrollPosition(idType: String.self)
+    @State private var initializedBoardID: String?
     @State private var showSearch = false
     @State private var showLoginAlert = false
     @State private var pendingPost: Post? = nil
@@ -146,15 +127,10 @@ struct PostListView: View {
             }
         }
         .refreshable {
-            let log = AppLogger.shared
-            log.log("🔽 PostList.refreshable start board=\(board.id) maemuri=\(activeMaemuri ?? "nil")")
             await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true)
-            guard !Task.isCancelled else {
-                log.log("⚠️ PostList.refreshable cancelled board=\(board.id) maemuri=\(activeMaemuri ?? "nil")")
-                return
+            if !Task.isCancelled {
+                scrollPosition = ScrollPosition(idType: String.self)
             }
-            scrollPosition = ScrollPosition(idType: String.self)
-            log.log("🔼 PostList.refreshable end board=\(board.id) posts=\(vm.posts.count) taskCancelled=\(Task.isCancelled)")
         }
         .scrollBounceBehavior(.always)
         .scrollPosition($scrollPosition)
@@ -208,19 +184,12 @@ struct PostListView: View {
         } message: {
             Text("성인 콘텐츠는 로그인 후 이용할 수 있습니다.")
         }
-        .onAppear {
-            AppLogger.shared.log("👀 PostListView appear board=\(board.id)")
-        }
-        .onDisappear {
-            AppLogger.shared.log("👋 PostListView disappear board=\(board.id)")
-        }
         .task(id: board.id) {
-            let log = AppLogger.shared
-            log.log("▶️ PostList.task start board=\(board.id)")
+            guard initializedBoardID != board.id else { return }
+            initializedBoardID = board.id
             selectedMaemuri = "전체"
             scrollPosition = ScrollPosition(idType: String.self)
             await vm.load(boardId: board.id, reset: true)
-            log.log("⏹️ PostList.task end board=\(board.id) posts=\(vm.posts.count) taskCancelled=\(Task.isCancelled)")
         }
     }
 
