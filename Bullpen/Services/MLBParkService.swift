@@ -22,6 +22,7 @@ enum MLBParkError: LocalizedError {
 @MainActor
 class MLBParkService {
     static let shared = MLBParkService()
+    private static let listPageSize = 30
     private static let utf8Charsets: Set<String> = ["utf-8", "utf8"]
     private static let legacyKoreanCharsets: Set<String> = [
         "euc-kr",
@@ -139,7 +140,7 @@ class MLBParkService {
     // MARK: - 게시글 목록
 
     func fetchPosts(boardId: String, page: Int = 1) async throws -> [Post] {
-        let html = try await fetch("\(base)/mp/b.php?b=\(boardId)&p=\(page)")
+        let html = try await fetch("\(base)/mp/b.php?b=\(boardId)&p=\(listOffset(for: page))")
         return try parsePostList(html: html, boardId: boardId)
     }
 
@@ -147,7 +148,7 @@ class MLBParkService {
     func fetchPostsByKeyword(boardId: String, keyword: String, select: String = "stt", page: Int = 1) async throws -> [Post] {
         // 검색 쿼리는 UTF-8 퍼센트 인코딩 (서버가 검색 API에서 UTF-8 기대)
         let encoded = keyword.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? keyword
-        let urlStr = "\(base)/mp/b.php?b=\(boardId)&m=search&select=\(select)&query=\(encoded)&p=\(page)"
+        let urlStr = "\(base)/mp/b.php?b=\(boardId)&m=search&select=\(select)&query=\(encoded)&p=\(listOffset(for: page))"
         let html = try await fetch(urlStr)
         return try parsePostList(html: html, boardId: boardId, isSearch: true)
     }
@@ -155,7 +156,7 @@ class MLBParkService {
     /// 말머리 필터 (서버사이드 검색 API 사용)
     func fetchPostsByMaemuri(boardId: String, maemuri: String, page: Int = 1) async throws -> [Post] {
         let encoded = maemuri.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? maemuri
-        let urlStr = "\(base)/mp/b.php?search_select=sct&search_input=&select=spf&m=search&b=\(boardId)&query=\(encoded)&p=\(page)"
+        let urlStr = "\(base)/mp/b.php?search_select=sct&search_input=&select=spf&m=search&b=\(boardId)&query=\(encoded)&p=\(listOffset(for: page))"
         let html = try await fetch(urlStr)
         return try parsePostList(html: html, boardId: boardId, isSearch: true)
     }
@@ -883,5 +884,11 @@ class MLBParkService {
             return "\(ek)=\(ev)"
         }.joined(separator: "&")
         return body.data(using: .ascii) ?? Data()
+    }
+
+    /// MLBPark 목록/검색의 p는 페이지 번호가 아니라 1-based 시작 오프셋이다.
+    private func listOffset(for page: Int) -> Int {
+        let normalizedPage = max(page, 1)
+        return ((normalizedPage - 1) * Self.listPageSize) + 1
     }
 }
