@@ -31,6 +31,7 @@ targets:
       - package: SwiftSoup
     settings:
       base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         PRODUCT_BUNDLE_IDENTIFIER: com.bullpen.app
         INFOPLIST_FILE: Bullpen/Resources/Info.plist
       configs:
