@@ -33,6 +33,9 @@ jobs:
       - name: 변경 확인
         id: diff
         run: |
+          if [ -f Bullpen.xcodeproj/project.pbxproj ]; then
+            git add -N Bullpen.xcodeproj/project.pbxproj
+          fi
           if git diff --quiet -- Bullpen.xcodeproj/project.pbxproj; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
