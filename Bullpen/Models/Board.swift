@@ -193,14 +193,6 @@ struct Board: Identifiable, Hashable, Codable {
                 .init(id: "2",   name: "19금"),
               ]),
 
-        Board(id: "worldbullpen", name: "해외야구",
-              maemuri: [
-                "야구", "축구", "해축", "러닝/헬스", "농구", "NBA", "NFL", "격투기",
-                "e스포츠", "라면대학", "유머/짤/펌", "동물", "여행", "패션", "영화", "만화",
-                "음식", "역사", "과학", "군사", "자동차", "IT", "아이돌", "방송/연애",
-                "코/주/부", "고민상담", "결혼/연애", "정치", "주번나/17금/19금", "핫딜",
-              ]),  // 글쓰기 불가 (사이트 write form에 없음)
-
         Board(id: "suggestion", name: "건의/제안",
               writeCategories: [
                 .init(id: "106", name: "신고합니다"),

@@ -21,9 +21,9 @@ class BestPostsViewModel: ObservableObject {
     }
 
     static let bestBoards: [Board] = Board.all.filter {
-        ["bullpen", "kbotown", "worldbullpen"].contains($0.id)
+        ["bullpen", "kbotown"].contains($0.id)
     }.sorted {
-        let order = ["bullpen": 0, "kbotown": 1, "worldbullpen": 2]
+        let order = ["bullpen": 0, "kbotown": 1]
         return (order[$0.id] ?? 9) < (order[$1.id] ?? 9)
     }
 

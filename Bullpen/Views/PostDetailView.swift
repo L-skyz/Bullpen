@@ -2,6 +2,7 @@ import SwiftUI
 import WebKit
 import UIKit
 
+private let postDetailHeaderBackground = Color.orange.opacity(0.08)
 private let postAuthorHighlightBackground = Color.orange.opacity(0.16)
 
 @MainActor
@@ -238,7 +239,7 @@ struct PostDetailView: View {
                             .font(.caption).foregroundColor(.secondary)
                         }
                         .padding()
-                        .background(postAuthorHighlightBackground)
+                        .background(postDetailHeaderBackground)
 
                         Divider()
 
@@ -305,7 +306,8 @@ struct PostDetailView: View {
                                         text: $vm.commentInput,
                                         axis: .vertical
                                     )
-                                    .lineLimit(3...6)
+                                    .lineLimit(4...7)
+                                    .frame(minHeight: 76, alignment: .top)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 10)
                                     .background(Color(.secondarySystemBackground))
