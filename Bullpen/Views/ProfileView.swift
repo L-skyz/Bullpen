@@ -67,6 +67,13 @@ struct ProfileView: View {
                 }
             }
 
+            // ── 개발 ──
+            Section("개발") {
+                NavigationLink(destination: LogView()) {
+                    Label("시작 로그", systemImage: "list.bullet.rectangle")
+                }
+            }
+
             // ── 로그아웃 ──
             Section {
                 Button(role: .destructive) {

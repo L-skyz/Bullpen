@@ -107,12 +107,17 @@ actor MLBParkService {
 
     // gather.donga.com 쿠키 없으면 mlbpark이 테이블 없는 JS 페이지만 반환
     private func warmupIfNeeded() async {
-        guard !warmedUp else { return }
+        guard !warmedUp else {
+            appLog("[Service] warmup skip")
+            return
+        }
         warmedUp = true
         guard let url = URL(string: "https://gather.donga.com/?cookie=1") else { return }
+        appLog("[Service] warmup start")
         var req = URLRequest(url: url)
         req.setValue("https://mlbpark.donga.com/", forHTTPHeaderField: "Referer")
         _ = try? await performRequest(req)
+        appLog("[Service] warmup done")
     }
 
     // MARK: - 공통 요청
@@ -125,6 +130,7 @@ actor MLBParkService {
     private func fetch(_ urlStr: String) async throws -> String {
         await warmupIfNeeded()
         guard let url = URL(string: urlStr) else { throw MLBParkError.invalidURL }
+        appLog("[Service] fetch \(url.lastPathComponent)\(url.query.map { "?\($0)" } ?? "")")
         var req = URLRequest(url: url)
         req.cachePolicy = .reloadIgnoringLocalCacheData
         req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
@@ -132,19 +138,25 @@ actor MLBParkService {
         req.setValue("ko-KR,ko;q=0.9", forHTTPHeaderField: "Accept-Language")
         req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         req.setValue("no-cache", forHTTPHeaderField: "Pragma")
+        let t = Date()
         let (data, response) = try await performRequest(req)
+        appLog("[Service] network \(String(format: "%.2f", Date().timeIntervalSince(t)))s, \(data.count / 1024)KB")
 
         guard let result = Self.decodeServerText(data, response: response) else {
             throw MLBParkError.encodingError
         }
+        appLog("[Service] decode done")
         return result
     }
 
     // MARK: - 게시글 목록
 
     func fetchPosts(boardId: String, page: Int = 1) async throws -> [Post] {
+        appLog("[Service] fetchPosts start (board=\(boardId), page=\(page))")
         let html = try await fetch("\(base)/mp/b.php?b=\(boardId)&p=\(listOffset(for: page))")
-        return try parsePostList(html: html, boardId: boardId)
+        let posts = try parsePostList(html: html, boardId: boardId)
+        appLog("[Service] fetchPosts done → \(posts.count)개")
+        return posts
     }
 
     /// 키워드 검색 (select: stt=제목, sct=제목+내용, swt=닉네임)

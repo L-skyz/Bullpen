@@ -25,6 +25,7 @@ class PostListViewModel: ObservableObject {
     }
 
     private func runLoad(boardId: String, maemuri: String? = nil, reset: Bool = false) async {
+        appLog("[PostList] runLoad start (reset=\(reset), board=\(boardId))")
         if reset {
             generation += 1
             page = 1
@@ -64,9 +65,13 @@ class PostListViewModel: ObservableObject {
             } else {
                 posts.append(contentsOf: newPosts)
             }
+            appLog("[PostList] posts ready → \(newPosts.count)개 표시")
         } catch is CancellationError {
+            appLog("[PostList] cancelled")
         } catch let e as URLError where e.code == .cancelled {
+            appLog("[PostList] cancelled (URLError)")
         } catch {
+            appLog("[PostList] error: \(error.localizedDescription)")
             self.error = error.localizedDescription
         }
     }
