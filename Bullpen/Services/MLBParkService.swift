@@ -36,7 +36,6 @@ actor MLBParkService {
     private let base = "https://mlbpark.donga.com"
     private let session: URLSession
     private var warmedUp = false
-    private var reqCounter = 0
 
     // CP949 (= Windows-949 = kCFStringEncodingDOSKorean = 0x0422)
     // String(data:encoding:) 경로는 NSStringEncoding 변환 레이어를 거쳐 간헐적으로 실패함
@@ -108,33 +107,24 @@ actor MLBParkService {
 
     // gather.donga.com 쿠키 없으면 mlbpark이 테이블 없는 JS 페이지만 반환
     private func warmupIfNeeded() async {
-        guard !warmedUp else {
-            appLog("[Service] warmup skip")
-            return
-        }
+        guard !warmedUp else { return }
         warmedUp = true
         guard let url = URL(string: "https://gather.donga.com/?cookie=1") else { return }
-        appLog("[Service] warmup start")
         var req = URLRequest(url: url)
         req.setValue("https://mlbpark.donga.com/", forHTTPHeaderField: "Referer")
         _ = try? await performRequest(req)
-        appLog("[Service] warmup done")
     }
 
     // MARK: - 공통 요청
 
     /// AuthService 등 외부에서 warmup+인코딩 처리된 HTML이 필요할 때 사용
-    func fetchHTML(_ urlStr: String, caller: String = "html") async throws -> String {
-        return try await fetch(urlStr, tag: caller)
+    func fetchHTML(_ urlStr: String) async throws -> String {
+        return try await fetch(urlStr)
     }
 
-    private func fetch(_ urlStr: String, tag: String) async throws -> String {
-        reqCounter += 1
-        let id = reqCounter
-        appLog("[Svc] #\(id)[\(tag)] warmup...")
+    private func fetch(_ urlStr: String) async throws -> String {
         await warmupIfNeeded()
         guard let url = URL(string: urlStr) else { throw MLBParkError.invalidURL }
-        appLog("[Svc] #\(id)[\(tag)] GET→")
         var req = URLRequest(url: url)
         req.cachePolicy = .reloadIgnoringLocalCacheData
         req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
@@ -142,23 +132,18 @@ actor MLBParkService {
         req.setValue("ko-KR,ko;q=0.9", forHTTPHeaderField: "Accept-Language")
         req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         req.setValue("no-cache", forHTTPHeaderField: "Pragma")
-        let t = Date()
         let (data, response) = try await performRequest(req)
-        appLog("[Svc] #\(id)[\(tag)] ←\(String(format: "%.2f", Date().timeIntervalSince(t)))s \(data.count/1024)KB decode...")
         guard let result = Self.decodeServerText(data, response: response) else {
             throw MLBParkError.encodingError
         }
-        appLog("[Svc] #\(id)[\(tag)] done")
         return result
     }
 
     // MARK: - 게시글 목록
 
     func fetchPosts(boardId: String, page: Int = 1) async throws -> [Post] {
-        let html = try await fetch("\(base)/mp/b.php?b=\(boardId)&p=\(listOffset(for: page))", tag: "posts/\(boardId)")
-        let posts = try parsePostList(html: html, boardId: boardId)
-        appLog("[Svc] posts/\(boardId) parse→\(posts.count)개")
-        return posts
+        let html = try await fetch("\(base)/mp/b.php?b=\(boardId)&p=\(listOffset(for: page))")
+        return try parsePostList(html: html, boardId: boardId)
     }
 
     /// 키워드 검색 (select: stt=제목, sct=제목+내용, swt=닉네임)
@@ -166,7 +151,7 @@ actor MLBParkService {
         // 검색 쿼리는 UTF-8 퍼센트 인코딩 (서버가 검색 API에서 UTF-8 기대)
         let encoded = keyword.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? keyword
         let urlStr = "\(base)/mp/b.php?b=\(boardId)&m=search&select=\(select)&query=\(encoded)&p=\(listOffset(for: page))"
-        let html = try await fetch(urlStr, tag: "search/\(boardId)")
+        let html = try await fetch(urlStr)
         return try parsePostList(html: html, boardId: boardId, isSearch: true)
     }
 
@@ -174,7 +159,7 @@ actor MLBParkService {
     func fetchPostsByMaemuri(boardId: String, maemuri: String, page: Int = 1) async throws -> [Post] {
         let encoded = maemuri.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? maemuri
         let urlStr = "\(base)/mp/b.php?search_select=sct&search_input=&select=spf&m=search&b=\(boardId)&query=\(encoded)&p=\(listOffset(for: page))"
-        let html = try await fetch(urlStr, tag: "maemuri/\(boardId)")
+        let html = try await fetch(urlStr)
         return try parsePostList(html: html, boardId: boardId, isSearch: true)
     }
 
@@ -235,7 +220,7 @@ actor MLBParkService {
 
     /// best.php?b={boardId}&m=like|reply|view → 10개 목록
     func fetchBestPosts(boardId: String, type: String) async throws -> [Post] {
-        let html = try await fetch("\(base)/mp/best.php?b=\(boardId)&m=\(type)", tag: "best/\(boardId)")
+        let html = try await fetch("\(base)/mp/best.php?b=\(boardId)&m=\(type)")
         return try parseBestPosts(html: html, boardId: boardId)
     }
 
@@ -268,7 +253,7 @@ actor MLBParkService {
     // MARK: - 게시글 상세
 
     func fetchPostDetail(boardId: String, postId: String) async throws -> PostDetail {
-        let html = try await fetch("\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=view", tag: "detail/\(postId)")
+        let html = try await fetch("\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=view")
         return try parsePostDetail(html: html, boardId: boardId, postId: postId)
     }
 
@@ -733,7 +718,7 @@ actor MLBParkService {
     // MARK: - 더그아웃 (내게시글 / 내댓글)
 
     func fetchDugout(source: String, page: Int = 1) async throws -> [DugoutItem] {
-        let html = try await fetch("\(base)/mp/dugout.php?source=\(source)&p=\(page)", tag: "dugout/\(source)")
+        let html = try await fetch("\(base)/mp/dugout.php?source=\(source)&p=\(page)")
         return try parseDugout(html: html, isComment: source == "mycomment")
     }
 
@@ -814,7 +799,7 @@ actor MLBParkService {
     /// 게시글 수정폼(m=update)의 기본 파라미터(category/upimg)를 회수한다.
     private func fetchUpdateFormParams(boardId: String, postId: String) async throws -> [String: String] {
         let updateURL = "\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=update"
-        let html = try await fetch(updateURL, tag: "updateForm")
+        let html = try await fetch(updateURL)
         let doc = try SwiftSoup.parse(html)
         var params: [String: String] = [:]
         if let form = try doc.select("form#writeForm").first() {
