@@ -88,3 +88,46 @@ struct ProfileView: View {
     }
 }
 
+// MARK: - LogView (임시 진단용)
+
+struct LogView: View {
+    @ObservedObject private var logger = AppLogger.shared
+
+    var body: some View {
+        List {
+            if logger.entries.isEmpty {
+                Text("로그 없음\n앱 완전 종료 후 재시작하세요.")
+                    .foregroundColor(.secondary).font(.caption)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .listRowBackground(Color.clear)
+            } else {
+                ForEach(logger.entries) { entry in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(entry.timeStr)
+                            .font(.caption2.monospaced()).foregroundColor(.orange)
+                        Text(entry.message)
+                            .font(.caption.monospaced()).lineLimit(5)
+                    }
+                    .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
+                }
+            }
+        }
+        .listStyle(.plain)
+        .navigationTitle("시작 로그")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("복사") {
+                    let text = logger.entries
+                        .map { "\($0.timeStr) \($0.message)" }
+                        .joined(separator: "\n")
+                    UIPasteboard.general.string = text
+                }
+            }
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("초기화") { logger.clear() }
+            }
+        }
+    }
+}

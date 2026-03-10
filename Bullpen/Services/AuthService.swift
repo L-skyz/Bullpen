@@ -122,7 +122,7 @@ class AuthService: ObservableObject {
         // (자체 session으로 직접 요청 시 gather.donga.com warmup 쿠키 누락으로
         //  mlbpark가 로그인 상태 HTML 미반환하는 문제 방지)
         do {
-            let html = try await MLBParkService.shared.fetchHTML("\(base)/mp/b.php?b=bullpen")
+            let html = try await MLBParkService.shared.fetchHTML("\(base)/mp/b.php?b=bullpen", caller: "fetchProfile")
 
             if html.contains("로그아웃") {
                 isLoggedIn = true
@@ -208,3 +208,33 @@ class AuthService: ObservableObject {
 }
 
 import SwiftSoup
+
+// MARK: - AppLogger (임시 진단용)
+
+struct LogEntry: Identifiable {
+    let id = UUID()
+    let elapsed: Double
+    let message: String
+    var timeStr: String { String(format: "+%.3fs", elapsed) }
+}
+
+/// 어느 actor/스레드에서든 await 없이 호출 가능
+func appLog(_ message: String) {
+    DispatchQueue.main.async { AppLogger.shared.append(message) }
+}
+
+@MainActor
+class AppLogger: ObservableObject {
+    static let shared = AppLogger()
+    private let t0 = Date()
+    @Published private(set) var entries: [LogEntry] = []
+    private init() {}
+
+    fileprivate func append(_ message: String) {
+        let elapsed = Date().timeIntervalSince(t0)
+        entries.append(LogEntry(elapsed: elapsed, message: message))
+        print("[AppLog] +\(String(format: "%.3f", elapsed))s \(message)")
+    }
+
+    func clear() { entries.removeAll() }
+}
