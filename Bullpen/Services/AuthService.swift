@@ -21,14 +21,6 @@ class AuthService: ObservableObject {
         appLog("[Auth] cookies restored")
         checkLoginStatus()
         appLog("[Auth] checkLoginStatus → isLoggedIn=\(isLoggedIn)")
-        // 쿠키 복원 후 서버로 실제 세션 유효 여부 검증
-        if isLoggedIn {
-            Task {
-                appLog("[Auth] fetchProfile start")
-                await fetchProfile()
-                appLog("[Auth] fetchProfile done → isLoggedIn=\(isLoggedIn)")
-            }
-        }
     }
 
     // MARK: - 로그인
