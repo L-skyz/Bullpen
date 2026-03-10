@@ -19,8 +19,7 @@ enum MLBParkError: LocalizedError {
     }
 }
 
-@MainActor
-class MLBParkService {
+actor MLBParkService {
     static let shared = MLBParkService()
     private static let listPageSize = 30
     private static let utf8Charsets: Set<String> = ["utf-8", "utf8"]
@@ -41,7 +40,7 @@ class MLBParkService {
     // CP949 (= Windows-949 = kCFStringEncodingDOSKorean = 0x0422)
     // String(data:encoding:) 경로는 NSStringEncoding 변환 레이어를 거쳐 간헐적으로 실패함
     // (Swift Forums #53109). CFStringCreateWithBytes 직접 호출이 iOS에서 가장 안정적.
-    static func decodeCP949(_ data: Data) -> String? {
+    nonisolated static func decodeCP949(_ data: Data) -> String? {
         data.withUnsafeBytes { ptr -> String? in
             guard let base = ptr.bindMemory(to: UInt8.self).baseAddress else { return nil }
             guard let cf = CFStringCreateWithBytes(
@@ -52,7 +51,7 @@ class MLBParkService {
         }
     }
 
-    static func decodeServerText(_ data: Data, response: URLResponse?) -> String? {
+    nonisolated static func decodeServerText(_ data: Data, response: URLResponse?) -> String? {
         let declaredCharset = extractDeclaredCharset(data: data, response: response)
 
         if let charset = declaredCharset, legacyKoreanCharsets.contains(charset) {
@@ -69,7 +68,7 @@ class MLBParkService {
             ?? String(decoding: data, as: UTF8.self)
     }
 
-    private static func extractDeclaredCharset(data: Data, response: URLResponse?) -> String? {
+    nonisolated private static func extractDeclaredCharset(data: Data, response: URLResponse?) -> String? {
         if let contentType = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type"),
            let headerCharset = extractCharset(from: contentType) {
             return headerCharset
@@ -79,7 +78,7 @@ class MLBParkService {
         return extractCharset(from: head)
     }
 
-    private static func extractCharset(from rawValue: String) -> String? {
+    nonisolated private static func extractCharset(from rawValue: String) -> String? {
         let lowercased = rawValue.lowercased()
         guard let range = lowercased.range(of: "charset=") else { return nil }
 
