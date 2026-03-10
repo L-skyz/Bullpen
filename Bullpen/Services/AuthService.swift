@@ -3,6 +3,20 @@ import Foundation
 @MainActor
 class AuthService: ObservableObject {
     static let shared = AuthService()
+    private static let persistedAuthCookieNames: Set<String> = [
+        "LoginAdult",
+        "SolonAuth",
+        "adult",
+        "adult14",
+        "adultuserok",
+        "classid",
+        "classidpw",
+        "dJoinCert",
+        "drsid",
+        "dusr",
+        "login_id",
+        "mlbuser"
+    ]
 
     @Published var isLoggedIn = false
     @Published var nickname: String = ""
@@ -18,6 +32,8 @@ class AuthService: ObservableObject {
         config.httpCookieAcceptPolicy = .always
         session = URLSession(configuration: config)
         restorePersistedCookies()
+        pruneNonAuthDongaCookies()
+        persistCookies()
         appLog("[Auth] cookies restored")
         checkLoginStatus()
         appLog("[Auth] checkLoginStatus → isLoggedIn=\(isLoggedIn)")
@@ -135,17 +151,50 @@ class AuthService: ObservableObject {
 
     // MARK: - 쿠키 영속화
 
+    private func isActiveCookie(_ cookie: HTTPCookie) -> Bool {
+        guard !cookie.value.isEmpty, cookie.value != "deleted" else { return false }
+        if let expiresDate = cookie.expiresDate {
+            return expiresDate > Date()
+        }
+        return true
+    }
+
+    private func shouldPersistAuthCookie(_ cookie: HTTPCookie) -> Bool {
+        guard cookie.domain.contains("donga.com"), isActiveCookie(cookie) else { return false }
+        return cookie.name.hasPrefix("dongauser") ||
+               Self.persistedAuthCookieNames.contains(cookie.name)
+    }
+
+    private func pruneNonAuthDongaCookies() {
+        let all = HTTPCookieStorage.shared.cookies ?? []
+        all.filter { $0.domain.contains("donga.com") && !shouldPersistAuthCookie($0) }
+           .forEach { HTTPCookieStorage.shared.deleteCookie($0) }
+    }
+
     private func persistCookies() {
-        // mlbpark.donga.com만이 아닌 *.donga.com 전체 저장
-        // (인증 쿠키가 secure.donga.com에서 .donga.com 도메인으로 세팅될 수 있음)
+        // 로그인 복원에 필요한 인증 쿠키만 저장한다.
         let all = HTTPCookieStorage.shared.cookies ?? []
         let saved: [[String: String]] = all.compactMap { c in
-            guard c.domain.contains("donga.com"),
-                  !c.value.isEmpty, c.value != "deleted" else { return nil }
-            return ["name": c.name, "value": c.value,
-                    "domain": c.domain, "path": c.path]
+            guard shouldPersistAuthCookie(c) else { return nil }
+
+            var dict: [String: String] = [
+                "name": c.name,
+                "value": c.value,
+                "domain": c.domain,
+                "path": c.path
+            ]
+            if c.isSecure { dict["secure"] = "1" }
+            if c.isHTTPOnly { dict["httpOnly"] = "1" }
+            if let expiresDate = c.expiresDate {
+                dict["expires"] = String(expiresDate.timeIntervalSince1970)
+            }
+            return dict
         }
-        UserDefaults.standard.set(saved, forKey: "persistedCookies")
+        if saved.isEmpty {
+            UserDefaults.standard.removeObject(forKey: "persistedCookies")
+        } else {
+            UserDefaults.standard.set(saved, forKey: "persistedCookies")
+        }
     }
 
     private func restorePersistedCookies() {
@@ -154,13 +203,19 @@ class AuthService: ObservableObject {
         for dict in saved {
             guard let name = dict["name"], let value = dict["value"],
                   let domain = dict["domain"] else { continue }
-            let props: [HTTPCookiePropertyKey: Any] = [
+            var props: [HTTPCookiePropertyKey: Any] = [
                 .name:    name,
                 .value:   value,
                 .domain:  domain,
-                .path:    dict["path"] ?? "/",
-                .expires: Date(timeIntervalSinceNow: 30 * 24 * 60 * 60)
+                .path:    dict["path"] ?? "/"
             ]
+            if dict["secure"] == "1" { props[.secure] = "TRUE" }
+            if dict["httpOnly"] == "1" {
+                props[HTTPCookiePropertyKey(rawValue: "HttpOnly")] = "TRUE"
+            }
+            if let expires = dict["expires"], let timestamp = TimeInterval(expires) {
+                props[.expires] = Date(timeIntervalSince1970: timestamp)
+            }
             if let cookie = HTTPCookie(properties: props) {
                 HTTPCookieStorage.shared.setCookie(cookie)
             }
@@ -188,14 +243,10 @@ class AuthService: ObservableObject {
             return
         }
 
-        // 닉네임 쿠키가 없어도 복원된 donga.com 쿠키가 있으면 일단 로그인 간주
-        // (fetchProfile이 비동기로 서버 검증하여 최종 결정)
-        let hasDongaCookie = allCookies.contains {
-            $0.domain.contains("donga.com") &&
-            !$0.value.isEmpty && $0.value != "deleted"
-        }
+        // 닉네임 쿠키가 없어도 인증 쿠키가 남아 있으면 로그인 상태로 유지한다.
+        let hasAuthCookie = allCookies.contains(where: shouldPersistAuthCookie)
         let hasPersistedData = UserDefaults.standard.array(forKey: "persistedCookies") != nil
-        isLoggedIn = hasDongaCookie && hasPersistedData
+        isLoggedIn = hasAuthCookie && hasPersistedData
     }
 }
 
