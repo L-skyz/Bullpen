@@ -891,7 +891,7 @@ struct BurningBoardSection: View {
                             .background(Color(.systemBackground))
                             .clipShape(UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 6))
                             .overlay(
-                                ThreeSidedBorder(radius: 6, color: period == i ? .orange : .clear, lineWidth: 1.5)
+                                ThreeSidedBorder(radius: 6, color: period == i ? .orange : Color(.systemGray4), lineWidth: 1.5)
                             )
                             // 선택탭이 콘텐츠 테두리를 덮도록 1pt 아래로 연장
                             .padding(.bottom, period == i ? 1.5 : 0)
