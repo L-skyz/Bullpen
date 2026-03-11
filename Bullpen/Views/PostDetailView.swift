@@ -790,7 +790,7 @@ struct CommentRowView: View {
                         .frame(width: 36).padding(.top, 2)
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
-                            Text(reply.author).font(.caption).fontWeight(.semibold)
+                            Text(reply.author).font(.footnote).fontWeight(.semibold).foregroundColor(.primary)
                             Spacer()
                             Text(reply.date).font(.caption2).foregroundColor(.secondary)
                         }
