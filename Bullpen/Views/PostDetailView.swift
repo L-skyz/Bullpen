@@ -891,7 +891,8 @@ struct BurningBoardSection: View {
                             .background(Color(.systemBackground))
                             .clipShape(UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 6))
                             .overlay(
-                                ThreeSidedBorder(radius: 6, color: period == i ? .orange : Color(.systemGray4), lineWidth: 1.5)
+                                ThreeSidedBorder(radius: 6)
+                                    .stroke(period == i ? Color.orange : Color(.systemGray4), lineWidth: 1.5)
                             )
                             // 선택탭이 콘텐츠 테두리를 덮도록 1pt 아래로 연장
                             .padding(.bottom, period == i ? 1.5 : 0)
@@ -948,13 +949,10 @@ struct BurningBoardSection: View {
 // 상단 3면(위+좌+우)만 그리는 테두리 Shape
 private struct ThreeSidedBorder: Shape {
     let radius: CGFloat
-    let color: Color
-    let lineWidth: CGFloat
 
     func path(in rect: CGRect) -> Path {
         var p = Path()
         let r = min(radius, rect.height / 2, rect.width / 2)
-        // 하단 좌측 시작 → 좌측 위로
         p.move(to: CGPoint(x: rect.minX, y: rect.maxY))
         p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
         p.addArc(center: CGPoint(x: rect.minX + r, y: rect.minY + r),
@@ -964,14 +962,6 @@ private struct ThreeSidedBorder: Shape {
                  radius: r, startAngle: .degrees(270), endAngle: .degrees(0), clockwise: false)
         p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
         return p
-    }
-
-    func body(content: Content) -> some View { content }
-}
-
-extension ThreeSidedBorder: ViewModifier {
-    func body(content: Content) -> some View {
-        content.overlay(self.stroke(color, lineWidth: lineWidth))
     }
 }
 
