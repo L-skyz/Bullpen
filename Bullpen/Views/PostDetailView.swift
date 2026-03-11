@@ -936,9 +936,6 @@ struct BurningBoardSection: View {
                 }
             }
             .background(Color(.systemBackground))
-            .overlay(alignment: .top) {
-                Rectangle().fill(Color.orange).frame(height: 1.5)
-            }
         }
         .navigationDestination(item: $selectedPost) { post in
             PostDetailView(boardId: post.boardId, postId: post.id)

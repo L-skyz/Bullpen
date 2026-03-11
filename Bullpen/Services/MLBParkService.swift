@@ -174,6 +174,13 @@ actor MLBParkService {
             let tds = try row.select("td")
             guard tds.size() >= 4 else { continue }
 
+            // 광고 행 스킵: row/td class에 ad 관련 키워드 포함
+            let rowClass = (try? row.attr("class")) ?? ""
+            guard !rowClass.contains("ad") && !rowClass.contains("banner") else { continue }
+            // colspan이 있으면 광고/공지 배너 행
+            let firstTdColspan = (try? tds.get(0).attr("colspan")) ?? ""
+            guard firstTdColspan.isEmpty else { continue }
+
             let firstTd = try tds.get(0).text().trimmingCharacters(in: .whitespaces)
 
             if isSearch {
