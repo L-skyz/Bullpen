@@ -276,7 +276,7 @@ struct PostDetailView: View {
                                         commentFocused = true
                                     } : nil
                                 )
-                                Divider().padding(.leading, 58)
+                                Divider().padding(.leading, 64)
                             }
                         }
 
@@ -306,12 +306,16 @@ struct PostDetailView: View {
                                         text: $vm.commentInput,
                                         axis: .vertical
                                     )
-                                    .lineLimit(4...7)
-                                    .frame(minHeight: 76, alignment: .top)
+                                    .lineLimit(5...10)
+                                    .frame(minHeight: 110, alignment: .top)
                                     .padding(.horizontal, 12)
-                                    .padding(.vertical, 10)
-                                    .background(Color(.secondarySystemBackground))
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    .padding(.vertical, 12)
+                                    .background(Color.white)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Color.purple, lineWidth: 1.5)
+                                    )
                                     .focused($commentFocused)
                                     Button {
                                         Task { await vm.submitComment(boardId: boardId, postId: postId) }
@@ -765,7 +769,7 @@ struct CommentRowView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(.horizontal).padding(.vertical, 10)
+            .padding(.horizontal).padding(.vertical, 14)
             .background(isPostAuthor ? postAuthorHighlightBackground : Color.clear)
 
             ForEach(comment.replies) { reply in
@@ -775,7 +779,7 @@ struct CommentRowView: View {
                         Color.clear.frame(width: 20)
                     }
                     Image(systemName: "arrow.turn.down.right")
-                        .font(.caption).foregroundColor(.secondary)
+                        .font(.caption).foregroundColor(.purple.opacity(0.6))
                         .frame(width: 36).padding(.top, 2)
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
@@ -790,8 +794,8 @@ struct CommentRowView: View {
                         Text(reply.content).font(.caption)
                     }
                 }
-                .padding(.horizontal).padding(.vertical, 6)
-                .background(isPostAuthor ? Color.orange.opacity(0.12) : Color(.secondarySystemBackground))
+                .padding(.horizontal).padding(.vertical, 8)
+                .background(isPostAuthor ? Color.orange.opacity(0.12) : Color.purple.opacity(0.07))
             }
         }
     }
