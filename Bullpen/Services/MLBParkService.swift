@@ -192,6 +192,7 @@ actor MLBParkService {
             // 제목: a.txt
             guard let titleLink = try titleTd.select("a.txt").first() else { continue }
             let title = try titleLink.text()
+            guard !title.isEmpty else { continue }
             let href  = try titleLink.attr("href")
             guard let postId = extractParam("id", from: href) else { continue }
             let postBoardId = extractParam("b", from: href) ?? boardId

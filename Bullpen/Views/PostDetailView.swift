@@ -344,7 +344,7 @@ struct PostDetailView: View {
                         }
 
                         // ── Burning 위젯 (실시간/주간/월간) ──
-                        BurningWidgetView()
+                        BurningWidgetView(boardId: boardId)
 
                         Spacer(minLength: 40)
                     }
@@ -829,7 +829,16 @@ class BurningWidgetViewModel: ObservableObject {
 }
 
 struct BurningWidgetView: View {
+    let boardId: String
     @StateObject private var vm = BurningWidgetViewModel()
+
+    private func boardPosts(from data: BurningData) -> BurningData.BoardPosts {
+        switch boardId {
+        case "kbotown": return data.kbo
+        case "bullpen":  return data.bullpen
+        default:         return data.mlb
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -845,9 +854,7 @@ struct BurningWidgetView: View {
             if vm.isLoading {
                 HStack { Spacer(); ProgressView(); Spacer() }.padding()
             } else if let data = vm.data {
-                BurningBoardSection(name: "MLB타운",  bp: data.mlb)
-                BurningBoardSection(name: "한국야구", bp: data.kbo)
-                BurningBoardSection(name: "BULLPEN",  bp: data.bullpen)
+                BurningBoardSection(bp: boardPosts(from: data))
             }
         }
         .task { await vm.load() }
@@ -855,7 +862,6 @@ struct BurningWidgetView: View {
 }
 
 struct BurningBoardSection: View {
-    let name: String
     let bp: BurningData.BoardPosts
     @State private var period = 0 // 0=실시간 1=주간 2=월간
     @State private var selectedPost: BurningPost?
@@ -870,30 +876,27 @@ struct BurningBoardSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // 게시판명 + 기간 탭
+            // 기간 탭
             HStack(spacing: 0) {
-                Text(name)
-                    .font(.subheadline).fontWeight(.bold)
-                    .foregroundColor(.primary)
-                    .padding(.leading)
-                Spacer()
-                HStack(spacing: 0) {
-                    ForEach(["실시간", "주간", "월간"].indices, id: \.self) { i in
-                        Button {
-                            period = i
-                        } label: {
+                ForEach(["실시간", "주간", "월간"].indices, id: \.self) { i in
+                    Button {
+                        period = i
+                    } label: {
+                        VStack(spacing: 0) {
                             Text(["실시간", "주간", "월간"][i])
-                                .font(.caption2)
+                                .font(.caption)
                                 .fontWeight(period == i ? .bold : .regular)
                                 .foregroundColor(period == i ? .orange : .secondary)
-                                .padding(.horizontal, 8).padding(.vertical, 4)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 7)
+                            Rectangle()
+                                .fill(period == i ? Color.orange : Color.clear)
+                                .frame(height: 2)
                         }
                     }
                 }
-                .padding(.trailing, 8)
             }
-            .padding(.vertical, 8)
-            .background(Color(.systemGray6))
+            .background(Color(.systemGray5))
 
             ForEach(Array(posts.enumerated()), id: \.element.id) { idx, post in
                 Button {
