@@ -817,38 +817,8 @@ struct CommentRowView: View {
 
 @MainActor
 class BurningWidgetViewModel: ObservableObject {
-    enum BoardTab: Int, CaseIterable {
-        case mlb, kbo, bullpen
-        var label: String {
-            switch self { case .mlb: "MLB타운"; case .kbo: "한국야구"; case .bullpen: "BULLPEN" }
-        }
-    }
-    enum PeriodTab: Int, CaseIterable {
-        case realtime, weekly, monthly
-        var label: String {
-            switch self { case .realtime: "실시간"; case .weekly: "주간"; case .monthly: "월간" }
-        }
-    }
-
     @Published var data: BurningData?
     @Published var isLoading = false
-    @Published var board: BoardTab = .mlb
-    @Published var period: PeriodTab = .realtime
-
-    var posts: [BurningPost] {
-        guard let data else { return [] }
-        let bp: BurningData.BoardPosts
-        switch board {
-        case .mlb:     bp = data.mlb
-        case .kbo:     bp = data.kbo
-        case .bullpen: bp = data.bullpen
-        }
-        switch period {
-        case .realtime: return bp.realtime
-        case .weekly:   return bp.weekly
-        case .monthly:  return bp.monthly
-        }
-    }
 
     func load() async {
         guard data == nil, !isLoading else { return }
@@ -865,93 +835,93 @@ struct BurningWidgetView: View {
         VStack(alignment: .leading, spacing: 0) {
             // 헤더
             HStack {
-                Image(systemName: "flame.fill")
-                    .foregroundColor(.orange)
+                Image(systemName: "flame.fill").foregroundColor(.orange)
                 Text("BURNING")
-                    .font(.headline).fontWeight(.bold)
-                    .foregroundColor(.orange)
+                    .font(.headline).fontWeight(.bold).foregroundColor(.orange)
                 Spacer()
             }
             .padding(.horizontal).padding(.top, 16).padding(.bottom, 8)
 
-            // 게시판 탭
-            HStack(spacing: 0) {
-                ForEach(BurningWidgetViewModel.BoardTab.allCases, id: \.rawValue) { tab in
-                    Button {
-                        vm.board = tab
-                    } label: {
-                        Text(tab.label)
-                            .font(.caption).fontWeight(vm.board == tab ? .bold : .regular)
-                            .foregroundColor(vm.board == tab ? .white : .secondary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
-                            .background(vm.board == tab ? Color.orange : Color.clear)
-                    }
-                }
-            }
-            .background(Color(.systemGray6))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .padding(.horizontal)
-
-            // 기간 탭
-            HStack(spacing: 0) {
-                ForEach(BurningWidgetViewModel.PeriodTab.allCases, id: \.rawValue) { tab in
-                    Button {
-                        vm.period = tab
-                    } label: {
-                        Text(tab.label)
-                            .font(.caption2).fontWeight(vm.period == tab ? .bold : .regular)
-                            .foregroundColor(vm.period == tab ? .orange : .secondary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 5)
-                    }
-                    if tab != .monthly {
-                        Divider().frame(height: 12)
-                    }
-                }
-            }
-            .padding(.horizontal).padding(.top, 6)
-
-            Divider().padding(.horizontal).padding(.top, 4)
-
-            // 포스트 목록
             if vm.isLoading {
                 HStack { Spacer(); ProgressView(); Spacer() }.padding()
-            } else {
-                ForEach(Array(vm.posts.enumerated()), id: \.element.id) { idx, post in
-                    NavigationLink(destination: PostDetailView(boardId: post.boardId, postId: post.id)) {
-                        HStack(spacing: 8) {
-                            Text("\(idx + 1)")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(idx < 3 ? .orange : .secondary)
-                                .frame(width: 20, alignment: .center)
-                            Text(post.title)
-                                .font(.subheadline)
-                                .lineLimit(1)
-                                .foregroundColor(.primary)
-                            Spacer()
-                            HStack(spacing: 4) {
-                                if post.replyCount > 0 {
-                                    Text("[\(post.replyCount)]")
-                                        .font(.caption2).foregroundColor(.secondary)
-                                }
-                                Image(systemName: "eye")
-                                    .font(.caption2).foregroundColor(.secondary)
-                                Text("\(post.views)")
-                                    .font(.caption2).foregroundColor(.secondary)
-                            }
-                        }
-                        .padding(.horizontal).padding(.vertical, 8)
-                    }
-                    .buttonStyle(.plain)
-                    if idx < vm.posts.count - 1 {
-                        Divider().padding(.leading, 36)
-                    }
-                }
+            } else if let data = vm.data {
+                BurningBoardSection(name: "MLB타운",  bp: data.mlb)
+                BurningBoardSection(name: "한국야구", bp: data.kbo)
+                BurningBoardSection(name: "BULLPEN",  bp: data.bullpen)
             }
         }
-        .background(Color(.systemBackground))
         .task { await vm.load() }
+    }
+}
+
+struct BurningBoardSection: View {
+    let name: String
+    let bp: BurningData.BoardPosts
+    @State private var period = 0 // 0=실시간 1=주간 2=월간
+
+    private var posts: [BurningPost] {
+        switch period {
+        case 1:  return bp.weekly
+        case 2:  return bp.monthly
+        default: return bp.realtime
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // 게시판명 + 기간 탭
+            HStack(spacing: 0) {
+                Text(name)
+                    .font(.subheadline).fontWeight(.bold)
+                    .foregroundColor(.primary)
+                    .padding(.leading)
+                Spacer()
+                // 기간 탭
+                HStack(spacing: 0) {
+                    ForEach(["실시간", "주간", "월간"].indices, id: \.self) { i in
+                        Button {
+                            period = i
+                        } label: {
+                            Text(["실시간", "주간", "월간"][i])
+                                .font(.caption2)
+                                .fontWeight(period == i ? .bold : .regular)
+                                .foregroundColor(period == i ? .orange : .secondary)
+                                .padding(.horizontal, 8).padding(.vertical, 4)
+                        }
+                    }
+                }
+                .padding(.trailing, 8)
+            }
+            .padding(.vertical, 8)
+            .background(Color(.systemGray6))
+
+            ForEach(Array(posts.enumerated()), id: \.element.id) { idx, post in
+                NavigationLink(destination: PostDetailView(boardId: post.boardId, postId: post.id)) {
+                    HStack(spacing: 8) {
+                        Text("\(idx + 1)")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(idx < 3 ? .orange : .primary)
+                            .frame(width: 20, alignment: .center)
+                        Text(post.title)
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        Spacer()
+                        if post.replyCount > 0 {
+                            Text("[\(post.replyCount)]")
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.horizontal).padding(.vertical, 8)
+                }
+                .buttonStyle(.plain)
+                if idx < posts.count - 1 {
+                    Divider().padding(.leading, 36)
+                }
+            }
+
+            Divider()
+        }
     }
 }
 
