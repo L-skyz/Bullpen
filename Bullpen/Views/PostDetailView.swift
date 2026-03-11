@@ -881,20 +881,16 @@ struct BurningBoardSection: View {
                 ForEach(["실시간", "주간", "월간"].indices, id: \.self) { i in
                     Button { period = i } label: {
                         Text(["실시간", "주간", "월간"][i])
-                            .font(.caption)
+                            .font(.subheadline)
                             .fontWeight(period == i ? .semibold : .regular)
-                            .foregroundColor(period == i ? .primary : .secondary)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
-                            .background(
-                                period == i
-                                    ? Color(.systemBackground)
-                                    : Color(.systemGray5)
-                            )
-                            .clipShape(
-                                period == i
-                                    ? UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 6)
-                                    : UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 6, bottomTrailingRadius: 6, topTrailingRadius: 6)
+                            .foregroundColor(period == i ? .orange : .secondary)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 8)
+                            .background(Color(.systemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(period == i ? Color.orange : Color(.systemGray4), lineWidth: 1)
                             )
                     }
                     .buttonStyle(.plain)
