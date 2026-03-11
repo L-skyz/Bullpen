@@ -18,6 +18,13 @@ jobs:
       - name: Xcode 선택
         run: sudo xcode-select -s /Applications/Xcode.app
 
+      - name: DerivedData 캐시
+        uses: irgaly/xcode-cache@v1
+        with:
+          key: xcode-cache-${{ github.workflow }}-${{ github.sha }}
+          restore-keys: xcode-cache-${{ github.workflow }}-
+          deriveddata-directory: build/DerivedData
+
       - name: 빌드
         run: |
           xcodebuild -project Bullpen.xcodeproj \
