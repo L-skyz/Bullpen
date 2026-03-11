@@ -300,7 +300,7 @@ struct PostDetailView: View {
                                     .padding(.horizontal).padding(.vertical, 6)
                                     .background(Color(.secondarySystemBackground))
                                 }
-                                HStack(alignment: .bottom, spacing: 8) {
+                                VStack(alignment: .trailing, spacing: 8) {
                                     TextField(
                                         vm.replyingTo == nil ? "댓글을 입력하세요" : "답글을 입력하세요",
                                         text: $vm.commentInput,
@@ -314,17 +314,24 @@ struct PostDetailView: View {
                                     .clipShape(RoundedRectangle(cornerRadius: 12))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 12)
-                                            .stroke(Color.purple, lineWidth: 1.5)
+                                            .stroke(Color(.systemGray4), lineWidth: 1.5)
                                     )
                                     .focused($commentFocused)
                                     Button {
                                         Task { await vm.submitComment(boardId: boardId, postId: postId) }
                                     } label: {
                                         if vm.isSubmittingComment {
-                                            ProgressView().frame(width: 44, height: 36)
+                                            ProgressView()
+                                                .frame(width: 72, height: 36)
+                                                .background(Color.purple.opacity(0.15))
+                                                .clipShape(RoundedRectangle(cornerRadius: 8))
                                         } else {
-                                            Image(systemName: "paperplane.fill")
-                                                .frame(width: 44, height: 36)
+                                            Text("등록")
+                                                .font(.subheadline).fontWeight(.semibold)
+                                                .foregroundColor(.purple)
+                                                .frame(width: 72, height: 36)
+                                                .background(Color.purple.opacity(0.15))
+                                                .clipShape(RoundedRectangle(cornerRadius: 8))
                                         }
                                     }
                                     .disabled(
