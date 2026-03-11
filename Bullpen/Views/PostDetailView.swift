@@ -796,7 +796,7 @@ struct CommentRowView: View {
                         }
                         if !reply.replyToAuthor.isEmpty {
                             Text("@\(reply.replyToAuthor)에게 답글")
-                                .font(.caption2).foregroundColor(.orange)
+                                .font(.subheadline).foregroundColor(.primary)
                         }
                         Text(reply.content).font(.caption)
                     }
