@@ -876,7 +876,7 @@ struct BurningBoardSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // 기간 탭 (폴더 탭 스타일)
+            // 기간 탭
             HStack(alignment: .bottom, spacing: 4) {
                 ForEach(["실시간", "주간", "월간"].indices, id: \.self) { i in
                     Button { period = i } label: {
@@ -886,12 +886,16 @@ struct BurningBoardSection: View {
                             .foregroundColor(period == i ? .orange : .secondary)
                             .padding(.horizontal, 18)
                             .padding(.vertical, 8)
+                            // 선택탭: 위+좌+우 3면 주황 테두리, 하단 없음 (콘텐츠와 이어짐)
+                            // 비선택탭: 테두리 없음
                             .background(Color(.systemBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .clipShape(UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 6))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(period == i ? Color.orange : Color.clear, lineWidth: 1.5)
+                                ThreeSidedBorder(radius: 6, color: period == i ? .orange : .clear, lineWidth: 1.5)
                             )
+                            // 선택탭이 콘텐츠 테두리를 덮도록 1pt 아래로 연장
+                            .padding(.bottom, period == i ? 1.5 : 0)
+                            .zIndex(period == i ? 1 : 0)
                     }
                     .buttonStyle(.plain)
                 }
@@ -899,9 +903,8 @@ struct BurningBoardSection: View {
             }
             .padding(.horizontal, 12)
             .padding(.top, 10)
-            .padding(.bottom, 0)
 
-            // 콘텐츠 영역
+            // 콘텐츠 영역 (주황 상단 테두리로 탭과 연결)
             VStack(spacing: 0) {
                 ForEach(Array(posts.enumerated()), id: \.element.id) { idx, post in
                     Button {
@@ -932,10 +935,43 @@ struct BurningBoardSection: View {
                 }
             }
             .background(Color(.systemBackground))
+            .overlay(alignment: .top) {
+                Rectangle().fill(Color.orange).frame(height: 1.5)
+            }
         }
         .navigationDestination(item: $selectedPost) { post in
             PostDetailView(boardId: post.boardId, postId: post.id)
         }
+    }
+}
+
+// 상단 3면(위+좌+우)만 그리는 테두리 Shape
+private struct ThreeSidedBorder: Shape {
+    let radius: CGFloat
+    let color: Color
+    let lineWidth: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let r = min(radius, rect.height / 2, rect.width / 2)
+        // 하단 좌측 시작 → 좌측 위로
+        p.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
+        p.addArc(center: CGPoint(x: rect.minX + r, y: rect.minY + r),
+                 radius: r, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
+        p.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
+        p.addArc(center: CGPoint(x: rect.maxX - r, y: rect.minY + r),
+                 radius: r, startAngle: .degrees(270), endAngle: .degrees(0), clockwise: false)
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        return p
+    }
+
+    func body(content: Content) -> some View { content }
+}
+
+extension ThreeSidedBorder: ViewModifier {
+    func body(content: Content) -> some View {
+        content.overlay(self.stroke(color, lineWidth: lineWidth))
     }
 }
 
