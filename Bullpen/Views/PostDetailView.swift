@@ -876,58 +876,69 @@ struct BurningBoardSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // 기간 탭
-            HStack(spacing: 0) {
+            // 기간 탭 (폴더 탭 스타일)
+            HStack(alignment: .bottom, spacing: 4) {
                 ForEach(["실시간", "주간", "월간"].indices, id: \.self) { i in
+                    Button { period = i } label: {
+                        Text(["실시간", "주간", "월간"][i])
+                            .font(.caption)
+                            .fontWeight(period == i ? .semibold : .regular)
+                            .foregroundColor(period == i ? .primary : .secondary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background(
+                                period == i
+                                    ? Color(.systemBackground)
+                                    : Color(.systemGray5)
+                            )
+                            .clipShape(
+                                period == i
+                                    ? UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 6)
+                                    : UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 6, bottomTrailingRadius: 6, topTrailingRadius: 6)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 0)
+            .background(Color(.systemGray6))
+
+            // 콘텐츠 영역
+            VStack(spacing: 0) {
+                ForEach(Array(posts.enumerated()), id: \.element.id) { idx, post in
                     Button {
-                        period = i
+                        selectedPost = post
                     } label: {
-                        VStack(spacing: 0) {
-                            Text(["실시간", "주간", "월간"][i])
-                                .font(.caption)
-                                .fontWeight(period == i ? .bold : .regular)
-                                .foregroundColor(period == i ? .orange : .secondary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 7)
-                            Rectangle()
-                                .fill(period == i ? Color.orange : Color.clear)
-                                .frame(height: 2)
+                        HStack(spacing: 8) {
+                            Text("\(idx + 1)")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(idx < 3 ? .orange : .primary)
+                                .frame(width: 20, alignment: .center)
+                            Text(post.title)
+                                .font(.subheadline)
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                            Spacer()
+                            if post.replyCount > 0 {
+                                Text("[\(post.replyCount)]")
+                                    .font(.caption).fontWeight(.semibold)
+                                    .foregroundColor(.orange)
+                            }
                         }
+                        .padding(.horizontal).padding(.vertical, 8)
+                    }
+                    .buttonStyle(.plain)
+                    if idx < posts.count - 1 {
+                        Divider().padding(.leading, 36)
                     }
                 }
             }
-            .background(Color(.systemGray5))
-
-            ForEach(Array(posts.enumerated()), id: \.element.id) { idx, post in
-                Button {
-                    selectedPost = post
-                } label: {
-                    HStack(spacing: 8) {
-                        Text("\(idx + 1)")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(idx < 3 ? .orange : .primary)
-                            .frame(width: 20, alignment: .center)
-                        Text(post.title)
-                            .font(.subheadline)
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-                        Spacer()
-                        if post.replyCount > 0 {
-                            Text("[\(post.replyCount)]")
-                                .font(.caption).fontWeight(.semibold)
-                                .foregroundColor(.orange)
-                        }
-                    }
-                    .padding(.horizontal).padding(.vertical, 8)
-                }
-                .buttonStyle(.plain)
-                if idx < posts.count - 1 {
-                    Divider().padding(.leading, 36)
-                }
-            }
-
-            Divider()
+            .background(Color(.systemBackground))
         }
+        .background(Color(.systemGray6))
         .navigationDestination(item: $selectedPost) { post in
             PostDetailView(boardId: post.boardId, postId: post.id)
         }
