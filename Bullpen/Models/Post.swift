@@ -1,5 +1,28 @@
 import Foundation
 
+// MARK: - Burning 위젯 모델
+
+struct BurningPost: Identifiable {
+    let id: String
+    let boardId: String
+    let title: String
+    let replyCount: Int
+    let views: Int
+}
+
+struct BurningData {
+    struct BoardPosts {
+        var realtime: [BurningPost] = []
+        var weekly:   [BurningPost] = []
+        var monthly:  [BurningPost] = []
+    }
+    var mlb     = BoardPosts()
+    var kbo     = BoardPosts()
+    var bullpen = BoardPosts()
+}
+
+// MARK: -
+
 struct Post: Identifiable, Hashable {
     let id: String
     let boardId: String

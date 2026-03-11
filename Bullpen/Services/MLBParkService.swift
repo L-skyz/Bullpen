@@ -893,4 +893,49 @@ actor MLBParkService {
         let normalizedPage = max(page, 1)
         return ((normalizedPage - 1) * Self.listPageSize) + 1
     }
+
+    // MARK: - Burning 위젯 (실시간/주간/월간)
+
+    func fetchBurningWidget() async throws -> BurningData {
+        let raw = try await fetch("\(base)/mp/api/getBurningWidget.php")
+        return try parseBurningWidget(raw)
+    }
+
+    private func parseBurningWidget(_ raw: String) throws -> BurningData {
+        guard let data = raw.data(using: .utf8),
+              let arr = try? JSONSerialization.jsonObject(with: data) as? [Any],
+              arr.count >= 2,
+              let htmlStr = arr[1] as? String else {
+            throw MLBParkError.parseError("burning widget JSON")
+        }
+        let doc = try SwiftSoup.parse(htmlStr)
+        var result = BurningData()
+
+        func posts(in divId: String, cls: String) throws -> [BurningPost] {
+            guard let ul = try doc.select("div#\(divId) ul.lists.\(cls)").first() else { return [] }
+            return try ul.select("li.items").compactMap { li -> BurningPost? in
+                guard let a = try? li.select("a.title").first() else { return nil }
+                let href   = (try? a.attr("href")) ?? ""
+                guard let postId  = extractParam("id", from: href),
+                      let boardId = extractParam("b",  from: href) else { return nil }
+                let title  = (try? a.select("span.txt").first()?.text()) ?? ""
+                let replyT = (try? a.select("span.replycont").first()?.text()) ?? ""
+                let viewsT = (try? a.select("span.views").first()?.text()) ?? ""
+                let reply  = Int(replyT.filter { $0.isNumber }) ?? 0
+                let views  = Int(viewsT.filter { $0.isNumber }) ?? 0
+                return BurningPost(id: postId, boardId: boardId, title: title, replyCount: reply, views: views)
+            }
+        }
+
+        result.mlb.realtime = try posts(in: "burning_list_mlb",     cls: "realtime")
+        result.mlb.weekly   = try posts(in: "burning_list_mlb",     cls: "weekly")
+        result.mlb.monthly  = try posts(in: "burning_list_mlb",     cls: "monthly")
+        result.kbo.realtime = try posts(in: "burning_list_kbo",     cls: "realtime")
+        result.kbo.weekly   = try posts(in: "burning_list_kbo",     cls: "weekly")
+        result.kbo.monthly  = try posts(in: "burning_list_kbo",     cls: "monthly")
+        result.bullpen.realtime = try posts(in: "burning_list_bullpen", cls: "realtime")
+        result.bullpen.weekly   = try posts(in: "burning_list_bullpen", cls: "weekly")
+        result.bullpen.monthly  = try posts(in: "burning_list_bullpen", cls: "monthly")
+        return result
+    }
 }
