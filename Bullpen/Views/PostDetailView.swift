@@ -890,7 +890,7 @@ struct BurningBoardSection: View {
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 6)
-                                    .stroke(period == i ? Color.orange : Color(.systemGray4), lineWidth: 1)
+                                    .stroke(period == i ? Color.orange : Color.clear, lineWidth: 1.5)
                             )
                     }
                     .buttonStyle(.plain)
@@ -900,7 +900,6 @@ struct BurningBoardSection: View {
             .padding(.horizontal, 12)
             .padding(.top, 10)
             .padding(.bottom, 0)
-            .background(Color(.systemGray6))
 
             // 콘텐츠 영역
             VStack(spacing: 0) {
@@ -934,7 +933,6 @@ struct BurningBoardSection: View {
             }
             .background(Color(.systemBackground))
         }
-        .background(Color(.systemGray6))
         .navigationDestination(item: $selectedPost) { post in
             PostDetailView(boardId: post.boardId, postId: post.id)
         }
