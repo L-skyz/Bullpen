@@ -391,7 +391,7 @@ actor MLBParkService {
             avatarUrl: authorAvatar,
             date: date,
             views: views,
-            commentCount: commentCount,
+            commentCount: flatList.count > 0 ? flatList.count : commentCount,
             recommendCount: recommend,
             contentHTML: contentHTML,
             comments: comments
