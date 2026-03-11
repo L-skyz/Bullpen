@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Burning 위젯 모델
 
-struct BurningPost: Identifiable {
+struct BurningPost: Identifiable, Hashable {
     let id: String
     let boardId: String
     let title: String
