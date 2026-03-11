@@ -858,6 +858,7 @@ struct BurningBoardSection: View {
     let name: String
     let bp: BurningData.BoardPosts
     @State private var period = 0 // 0=실시간 1=주간 2=월간
+    @State private var selectedPost: BurningPost?
 
     private var posts: [BurningPost] {
         switch period {
@@ -876,7 +877,6 @@ struct BurningBoardSection: View {
                     .foregroundColor(.primary)
                     .padding(.leading)
                 Spacer()
-                // 기간 탭
                 HStack(spacing: 0) {
                     ForEach(["실시간", "주간", "월간"].indices, id: \.self) { i in
                         Button {
@@ -896,7 +896,9 @@ struct BurningBoardSection: View {
             .background(Color(.systemGray6))
 
             ForEach(Array(posts.enumerated()), id: \.element.id) { idx, post in
-                NavigationLink(destination: PostDetailView(boardId: post.boardId, postId: post.id)) {
+                Button {
+                    selectedPost = post
+                } label: {
                     HStack(spacing: 8) {
                         Text("\(idx + 1)")
                             .font(.system(size: 12, weight: .bold))
@@ -909,7 +911,8 @@ struct BurningBoardSection: View {
                         Spacer()
                         if post.replyCount > 0 {
                             Text("[\(post.replyCount)]")
-                                .font(.caption2).foregroundColor(.secondary)
+                                .font(.caption).fontWeight(.semibold)
+                                .foregroundColor(.orange)
                         }
                     }
                     .padding(.horizontal).padding(.vertical, 8)
@@ -921,6 +924,9 @@ struct BurningBoardSection: View {
             }
 
             Divider()
+        }
+        .navigationDestination(item: $selectedPost) { post in
+            PostDetailView(boardId: post.boardId, postId: post.id)
         }
     }
 }
