@@ -11,9 +11,7 @@ struct BullpenApp: App {
                 .environmentObject(auth)
                 .environmentObject(filter)
                 .task {
-                    if auth.isLoggedIn {
-                        await auth.fetchProfile()
-                    }
+                    await auth.fetchProfile()
                 }
         }
     }
