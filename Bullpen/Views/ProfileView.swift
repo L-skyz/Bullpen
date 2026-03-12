@@ -3,80 +3,155 @@ import SwiftUI
 struct ProfileView: View {
     @EnvironmentObject var auth: AuthService
     @EnvironmentObject var filter: BlockFilter
+    @State private var showLogoutAlert = false
 
     var body: some View {
-        Form {
-            // ── 프로필 ──
-            Section {
-                HStack {
-                    Image(systemName: "person.circle.fill")
-                        .font(.system(size: 48))
-                        .foregroundColor(.orange)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(auth.nickname.isEmpty ? "회원" : auth.nickname)
-                            .font(.headline)
-                        Text("mlbpark.donga.com")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .padding(.vertical, 8)
-            }
+        ScrollView {
+            VStack(spacing: 0) {
 
-            // ── 내 활동 ──
-            Section("내 활동") {
-                NavigationLink(destination: DugoutView(source: "my")) {
-                    Label("내 게시글", systemImage: "doc.text")
-                }
-                NavigationLink(destination: DugoutView(source: "mycomment")) {
-                    Label("내 댓글", systemImage: "bubble.left.and.bubble.right")
-                }
-            }
+                // ── 프로필 헤더 ──────────────────────────────
+                VStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(LinearGradient(
+                                colors: [.orange, .orange.opacity(0.6)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 80, height: 80)
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 38))
+                            .foregroundColor(.white)
+                    }
+                    .shadow(color: .orange.opacity(0.3), radius: 8, y: 4)
 
-            // ── 차단 설정 ──
-            Section("차단 설정") {
-                NavigationLink(destination: BlockSettingsView(type: .maemuri)) {
-                    HStack {
-                        Label("말머리 차단", systemImage: "tag.slash")
-                        Spacer()
-                        if !filter.blockedMaemuri.isEmpty {
-                            Text("\(filter.blockedMaemuri.count)")
-                                .font(.caption).foregroundColor(.secondary)
-                        }
-                    }
-                }
-                NavigationLink(destination: BlockSettingsView(type: .keyword)) {
-                    HStack {
-                        Label("키워드 차단", systemImage: "text.badge.xmark")
-                        Spacer()
-                        if !filter.blockedKeywords.isEmpty {
-                            Text("\(filter.blockedKeywords.count)")
-                                .font(.caption).foregroundColor(.secondary)
-                        }
-                    }
-                }
-                NavigationLink(destination: BlockSettingsView(type: .nickname)) {
-                    HStack {
-                        Label("닉네임 차단", systemImage: "person.slash")
-                        Spacer()
-                        if !filter.blockedNicknames.isEmpty {
-                            Text("\(filter.blockedNicknames.count)")
-                                .font(.caption).foregroundColor(.secondary)
-                        }
-                    }
-                }
-            }
+                    Text(auth.nickname.isEmpty ? "회원" : auth.nickname)
+                        .font(.title3).fontWeight(.bold)
 
-            // ── 로그아웃 ──
-            Section {
-                Button(role: .destructive) {
-                    auth.logout()
-                } label: {
-                    Text("로그아웃").frame(maxWidth: .infinity)
+                    Text("mlbpark.donga.com")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 32)
+                .background(Color(.systemBackground))
+
+                Divider()
+
+                // ── 내 활동 ──────────────────────────────────
+                menuSection(title: "내 활동") {
+                    menuRow(icon: "doc.text", iconColor: .orange, label: "내 게시글") {
+                        DugoutView(source: "my")
+                    }
+                    Divider().padding(.leading, 52)
+                    menuRow(icon: "bubble.left.and.bubble.right", iconColor: .orange, label: "내 댓글") {
+                        DugoutView(source: "mycomment")
+                    }
+                }
+
+                // ── 차단 설정 ────────────────────────────────
+                menuSection(title: "차단 설정") {
+                    menuRow(icon: "tag.slash", iconColor: .indigo, label: "말머리 차단",
+                            badge: filter.blockedMaemuri.isEmpty ? nil : "\(filter.blockedMaemuri.count)") {
+                        BlockSettingsView(type: .maemuri)
+                    }
+                    Divider().padding(.leading, 52)
+                    menuRow(icon: "text.badge.xmark", iconColor: .indigo, label: "키워드 차단",
+                            badge: filter.blockedKeywords.isEmpty ? nil : "\(filter.blockedKeywords.count)") {
+                        BlockSettingsView(type: .keyword)
+                    }
+                    Divider().padding(.leading, 52)
+                    menuRow(icon: "person.slash", iconColor: .indigo, label: "닉네임 차단",
+                            badge: filter.blockedNicknames.isEmpty ? nil : "\(filter.blockedNicknames.count)") {
+                        BlockSettingsView(type: .nickname)
+                    }
+                }
+
+                // ── 로그아웃 ─────────────────────────────────
+                VStack(spacing: 0) {
+                    Button {
+                        showLogoutAlert = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "rectangle.portrait.and.arrow.right")
+                                .foregroundColor(.red)
+                                .frame(width: 28)
+                            Text("로그아웃")
+                                .foregroundColor(.red)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .background(Color(.secondarySystemGroupedBackground))
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 32)
             }
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle("내 정보")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("로그아웃 하시겠습니까?", isPresented: $showLogoutAlert, titleVisibility: .visible) {
+            Button("로그아웃", role: .destructive) { auth.logout() }
+        }
+    }
+
+    // MARK: - 헬퍼
+
+    @ViewBuilder
+    private func menuSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 20)
+                .padding(.bottom, 6)
+
+            VStack(spacing: 0) {
+                content()
+            }
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, 16)
+        }
+    }
+
+    @ViewBuilder
+    private func menuRow<Dest: View>(
+        icon: String,
+        iconColor: Color,
+        label: String,
+        badge: String? = nil,
+        destination: () -> Dest
+    ) -> some View {
+        NavigationLink(destination: destination()) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(iconColor)
+                        .frame(width: 28, height: 28)
+                    Image(systemName: icon)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+                Text(label)
+                    .foregroundColor(.primary)
+                Spacer()
+                if let badge {
+                    Text(badge)
+                        .font(.caption)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.5))
+                        .clipShape(Capsule())
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 13)
+        }
     }
 }
