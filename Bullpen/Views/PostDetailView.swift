@@ -276,7 +276,14 @@ struct PostDetailView: View {
                                     onReply: auth.isLoggedIn ? {
                                         vm.replyingTo = c
                                         commentFocused = true
-                                    } : nil
+                                    } : nil,
+                                    onEditReply: { reply in
+                                        editCommentText = reply.content
+                                        editingComment  = reply
+                                    },
+                                    onDeleteReply: { reply in
+                                        deletingComment = reply
+                                    }
                                 )
                                 Divider().padding(.leading, 64)
                             }
@@ -723,6 +730,8 @@ struct CommentRowView: View {
     var onEdit: (() -> Void)? = nil
     var onDelete: (() -> Void)? = nil
     var onReply: (() -> Void)? = nil
+    var onEditReply: ((Comment) -> Void)? = nil
+    var onDeleteReply: ((Comment) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -798,6 +807,21 @@ struct CommentRowView: View {
                             Text(reply.author).font(.footnote).fontWeight(.semibold).foregroundColor(.primary)
                             Spacer()
                             Text(reply.date).font(.caption2).foregroundColor(.secondary)
+                            if reply.isOwn {
+                                Menu {
+                                    if let onEditReply {
+                                        Button("수정") { onEditReply(reply) }
+                                    }
+                                    if let onDeleteReply {
+                                        Button("삭제", role: .destructive) { onDeleteReply(reply) }
+                                    }
+                                } label: {
+                                    Image(systemName: "ellipsis")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .padding(4)
+                                }
+                            }
                         }
                         if !reply.replyToAuthor.isEmpty {
                             Text("@\(reply.replyToAuthor)에게 답글")
