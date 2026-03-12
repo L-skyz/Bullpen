@@ -34,12 +34,10 @@ struct Post: Identifiable, Hashable {
     let views: Int
     let commentCount: Int
     let recommendCount: Int
-    let isListReply: Bool
 
     init(id: String, boardId: String, maemuri: String, title: String,
          author: String, avatarUrl: String = "", date: String,
-         views: Int, commentCount: Int, recommendCount: Int,
-         isListReply: Bool = false) {
+         views: Int, commentCount: Int, recommendCount: Int) {
         self.id = id
         self.boardId = boardId
         self.maemuri = maemuri
@@ -50,7 +48,6 @@ struct Post: Identifiable, Hashable {
         self.views = views
         self.commentCount = commentCount
         self.recommendCount = recommendCount
-        self.isListReply = isListReply
     }
 
     var detailURL: URL? {
