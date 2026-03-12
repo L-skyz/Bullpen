@@ -6,6 +6,7 @@ class AuthService: ObservableObject {
 
     @Published var isLoggedIn = false
     @Published var nickname: String = ""
+    @Published var avatarUrl: String = ""
 
     private let base = "https://mlbpark.donga.com"
     private let session: URLSession
@@ -82,6 +83,7 @@ class AuthService: ObservableObject {
     func logout() {
         isLoggedIn = false
         nickname = ""
+        avatarUrl = ""
         UserDefaults.standard.removeObject(forKey: "persistedCookies")
         HTTPCookieStorage.shared.cookies?
             .filter { $0.domain.contains("donga.com") }
@@ -100,13 +102,27 @@ class AuthService: ObservableObject {
                     let extracted = String(html[start.upperBound..<end.lowerBound])
                     if !extracted.isEmpty { nickname = extracted }
                 }
+                updateAvatarUrl()
             } else {
                 isLoggedIn = false
                 nickname   = ""
+                avatarUrl  = ""
             }
         } catch {
             // 네트워크 오류 시 기존 상태 유지
         }
+    }
+
+    // MARK: - 아바타 URL 구성
+
+    private func updateAvatarUrl() {
+        // dongauserid 쿠키 → uid 각 문자를 디렉토리로 분리한 URL 패턴
+        // 예: uid="abc123" → .../a/b/c/1/2/3/abc123@d.png
+        guard let uid = HTTPCookieStorage.shared.cookies?.first(where: {
+            $0.domain.contains("donga.com") && $0.name == "dongauserid" && !$0.value.isEmpty
+        })?.value else { return }
+        let spread = uid.map { String($0) }.joined(separator: "/")
+        avatarUrl = "https://dimg.donga.com/ugc/WWW/Profile/\(spread)/\(uid)@d.png"
     }
 
     // MARK: - 쿠키 영속화 (세션 유지용)

@@ -11,24 +11,28 @@ struct ProfileView: View {
 
                 // ── 프로필 헤더 ──────────────────────────────
                 VStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(LinearGradient(
-                                colors: [.orange, .orange.opacity(0.6)],
-                                startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 80, height: 80)
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 38))
-                            .foregroundColor(.white)
+                    AsyncImage(url: URL(string: auth.avatarUrl)) { phase in
+                        switch phase {
+                        case .success(let img):
+                            img.resizable().scaledToFill()
+                        default:
+                            ZStack {
+                                Circle()
+                                    .fill(LinearGradient(
+                                        colors: [.orange, .orange.opacity(0.6)],
+                                        startPoint: .topLeading, endPoint: .bottomTrailing))
+                                Image(systemName: "person.fill")
+                                    .font(.system(size: 38))
+                                    .foregroundColor(.white)
+                            }
+                        }
                     }
+                    .frame(width: 80, height: 80)
+                    .clipShape(Circle())
                     .shadow(color: .orange.opacity(0.3), radius: 8, y: 4)
 
                     Text(auth.nickname.isEmpty ? "회원" : auth.nickname)
                         .font(.title3).fontWeight(.bold)
-
-                    Text("mlbpark.donga.com")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 32)
