@@ -186,8 +186,12 @@ actor MLBParkService {
             // 공지 배너 행 명시적 스킵 (WBC 이벤트 등)
             guard firstTd != "공지" else { continue }
 
-            // 건의사항 관리자 답변 행: td[0]="└"
+            // 건의사항 관리자 답변 행: td[0]="└" (U+2514 = &#9492;)
+            // SwiftSoup이 HTML entity를 text()에서 디코딩 안 할 수도 있으므로 3중 체크
+            let firstTdHtml = (try? tds.get(0).html()) ?? ""
             let isReplyRow = firstTd == "└"
+                          || firstTdHtml.contains("9492")
+                          || (firstTd.count == 1 && !(firstTd.first?.isNumber ?? true))
 
             if isSearch {
                 // 헤더 행("게시판") 및 빈 행 제외
@@ -204,7 +208,7 @@ actor MLBParkService {
 
             // 제목: a.txt
             guard let titleLink = try titleTd.select("a.txt").first() else { continue }
-            let title = try titleLink.text()
+            let title = try titleLink.text().trimmingCharacters(in: .whitespacesAndNewlines)
             guard !title.isEmpty else { continue }
             let href  = try titleLink.attr("href")
             guard let postId = extractParam("id", from: href) else { continue }
@@ -932,7 +936,8 @@ actor MLBParkService {
                 let href   = (try? a.attr("href")) ?? ""
                 guard let postId  = extractParam("id", from: href),
                       let boardId = extractParam("b",  from: href) else { return nil }
-                let title  = (try? a.select("span.txt").first()?.text()) ?? ""
+                let title  = ((try? a.select("span.txt").first()?.text()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !title.isEmpty else { return nil }
                 let replyT = (try? a.select("span.replycont").first()?.text()) ?? ""
                 let viewsT = (try? a.select("span.views").first()?.text()) ?? ""
                 let reply  = Int(replyT.filter { $0.isNumber }) ?? 0
