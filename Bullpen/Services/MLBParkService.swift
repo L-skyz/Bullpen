@@ -183,18 +183,24 @@ actor MLBParkService {
 
             let firstTd = try tds.get(0).text().trimmingCharacters(in: .whitespaces)
 
+            // 공지 배너 행 명시적 스킵 (WBC 이벤트 등)
+            guard firstTd != "공지" else { continue }
+
+            // 건의사항 관리자 답변 행: td[0]="└"
+            let isReplyRow = firstTd == "└"
+
             if isSearch {
                 // 헤더 행("게시판") 및 빈 행 제외
                 guard !firstTd.isEmpty, firstTd != "게시판" else { continue }
             } else {
-                // 글번호가 숫자 5자리 이상인 행만 (공지·헤더 제외)
-                guard firstTd.allSatisfy({ $0.isNumber }), firstTd.count >= 5 else { continue }
+                // 글번호가 숫자 5자리 이상인 행 또는 관리자 답변 행(└)
+                guard (firstTd.allSatisfy({ $0.isNumber }) && firstTd.count >= 5) || isReplyRow else { continue }
             }
 
             let titleTd = tds.get(1)
 
-            // 말머리: a.list_word
-            let maemuri = try titleTd.select("a.list_word").first()?.text() ?? ""
+            // 말머리: a.list_word (답변 행은 "└" 표시)
+            let maemuri = isReplyRow ? "└" : (try titleTd.select("a.list_word").first()?.text() ?? "")
 
             // 제목: a.txt
             guard let titleLink = try titleTd.select("a.txt").first() else { continue }
