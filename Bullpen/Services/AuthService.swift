@@ -17,25 +17,24 @@ class AuthService: ObservableObject {
         config.httpCookieAcceptPolicy = .always
         session = URLSession(configuration: config)
         restorePersistedCookies()
-        checkLoginStatus()
+        // 로그인 상태·닉네임은 BullpenApp.task에서 fetchProfile()로 확인
     }
 
     // MARK: - 로그인
 
     func login(id: String, password: String) async throws {
         let loginPageURL = "https://secure.donga.com/mlbpark/login.php"
-        // JS가 form action을 trans_exe.php로 동적 변경 후 submit — 실제 엔드포인트
         let loginActionURL = "https://secure.donga.com/mlbpark/trans_exe.php"
         let ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
 
-        // Step 1: GET 로그인 페이지 → 세션 쿠키(gourl 등) 수신
+        // Step 1: GET 로그인 페이지 → 세션 쿠키 수신
         if let getURL = URL(string: loginPageURL) {
             var getReq = URLRequest(url: getURL)
             getReq.setValue(ua, forHTTPHeaderField: "User-Agent")
             _ = try? await session.data(for: getReq)
         }
 
-        // Step 2: POST to trans_exe.php (브라우저와 동일한 실제 엔드포인트)
+        // Step 2: POST to trans_exe.php
         guard let postURL = URL(string: loginActionURL) else { return }
         var req = URLRequest(url: postURL)
         req.httpMethod = "POST"
@@ -62,9 +61,7 @@ class AuthService: ObservableObject {
             throw MLBParkError.networkError("로그인 실패 (\(http.statusCode))")
         }
 
-        // Step 3: 성공/실패 판단
-        // 실패: 200 OK, secure.donga.com에서 에러 HTML 반환
-        // 성공: 302 redirect → mlbpark.donga.com (URLSession 자동 팔로우)
+        // Step 3: 성공/실패 판단 (실패 시 secure.donga.com에 머뭄)
         let finalHost = (resp as? HTTPURLResponse)?.url?.host ?? ""
         if finalHost.contains("secure.donga.com") || finalHost.isEmpty {
             let html = MLBParkService.decodeServerText(data, response: resp) ?? ""
@@ -75,8 +72,7 @@ class AuthService: ObservableObject {
             throw MLBParkError.networkError("로그인에 실패했습니다. 다시 시도해주세요.")
         }
 
-        // Step 4: 성공 — HTML에서 닉네임 직접 추출
-        isLoggedIn = true
+        // Step 4: 성공 — 쿠키 저장 후 HTML에서 닉네임 직접 파싱
         persistCookies()
         await fetchProfile()
     }
@@ -87,24 +83,18 @@ class AuthService: ObservableObject {
         isLoggedIn = false
         nickname = ""
         UserDefaults.standard.removeObject(forKey: "persistedCookies")
-        // mlbpark뿐 아니라 donga.com 전체 쿠키 삭제
-        let all = HTTPCookieStorage.shared.cookies ?? []
-        all.filter { $0.domain.contains("donga.com") }
-           .forEach { HTTPCookieStorage.shared.deleteCookie($0) }
+        HTTPCookieStorage.shared.cookies?
+            .filter { $0.domain.contains("donga.com") }
+            .forEach { HTTPCookieStorage.shared.deleteCookie($0) }
     }
 
-    // MARK: - 프로필 조회 / 세션 검증
+    // MARK: - 로그인 상태 + 닉네임 확인 (HTML 기준)
 
     func fetchProfile() async {
-        // MLBParkService.fetchHTML 사용 → warmup + 인코딩 처리 자동 포함
-        // (자체 session으로 직접 요청 시 gather.donga.com warmup 쿠키 누락으로
-        //  mlbpark가 로그인 상태 HTML 미반환하는 문제 방지)
         do {
             let html = try await MLBParkService.shared.fetchHTML("\(base)/mp/b.php?b=bullpen")
-
             if html.contains("로그아웃") {
                 isLoggedIn = true
-                // raw HTML 패턴: class='login'>로그아웃 (닉네임)</a>
                 if let start = html.range(of: "로그아웃 ("),
                    let end   = html[start.upperBound...].range(of: ")") {
                     let extracted = String(html[start.upperBound..<end.lowerBound])
@@ -119,37 +109,19 @@ class AuthService: ObservableObject {
         }
     }
 
-    // MARK: - 쿠키 영속화
-
-    private func isPersistableDongaCookie(_ cookie: HTTPCookie) -> Bool {
-        guard cookie.domain.contains("donga.com"),
-              !cookie.value.isEmpty,
-              cookie.value != "deleted" else { return false }
-        if let expiresDate = cookie.expiresDate {
-            return expiresDate > Date()
-        }
-        return true
-    }
+    // MARK: - 쿠키 영속화 (세션 유지용)
 
     private func persistCookies() {
-        // 인증 외 쿠키도 포함해 기존 동작은 유지하되, 만료된 쿠키는 저장하지 않는다.
-        let all = HTTPCookieStorage.shared.cookies ?? []
-        let saved: [[String: String]] = all.compactMap { c in
-            guard isPersistableDongaCookie(c) else { return nil }
-
-            var dict: [String: String] = [
-                "name": c.name,
-                "value": c.value,
-                "domain": c.domain,
-                "path": c.path
-            ]
-            if c.isSecure { dict["secure"] = "1" }
-            if c.isHTTPOnly { dict["httpOnly"] = "1" }
-            if let expiresDate = c.expiresDate {
-                dict["expires"] = String(expiresDate.timeIntervalSince1970)
+        let saved: [[String: String]] = (HTTPCookieStorage.shared.cookies ?? [])
+            .filter { $0.domain.contains("donga.com") && !$0.value.isEmpty && $0.value != "deleted" }
+            .compactMap { c in
+                if let exp = c.expiresDate, exp <= Date() { return nil }
+                var d: [String: String] = ["name": c.name, "value": c.value,
+                                           "domain": c.domain, "path": c.path]
+                if c.isSecure { d["secure"] = "1" }
+                if let exp = c.expiresDate { d["expires"] = String(exp.timeIntervalSince1970) }
+                return d
             }
-            return dict
-        }
         if saved.isEmpty {
             UserDefaults.standard.removeObject(forKey: "persistedCookies")
         } else {
@@ -160,47 +132,20 @@ class AuthService: ObservableObject {
     private func restorePersistedCookies() {
         guard let saved = UserDefaults.standard.array(forKey: "persistedCookies")
                 as? [[String: String]] else { return }
-        var restored: [[String: String]] = []
         for dict in saved {
             guard let name = dict["name"], let value = dict["value"],
                   let domain = dict["domain"] else { continue }
-            if let expires = dict["expires"],
-               let timestamp = TimeInterval(expires),
-               Date(timeIntervalSince1970: timestamp) <= Date() {
-                continue
-            }
+            if let exp = dict["expires"], let ts = TimeInterval(exp), Date(timeIntervalSince1970: ts) <= Date() { continue }
             var props: [HTTPCookiePropertyKey: Any] = [
-                .name:    name,
-                .value:   value,
-                .domain:  domain,
-                .path:    dict["path"] ?? "/"
+                .name: name, .value: value, .domain: domain, .path: dict["path"] ?? "/"
             ]
             if dict["secure"] == "1" { props[.secure] = "TRUE" }
-            if dict["httpOnly"] == "1" {
-                props[HTTPCookiePropertyKey(rawValue: "HttpOnly")] = "TRUE"
-            }
-            if let expires = dict["expires"], let timestamp = TimeInterval(expires) {
-                props[.expires] = Date(timeIntervalSince1970: timestamp)
+            if let exp = dict["expires"], let ts = TimeInterval(exp) {
+                props[.expires] = Date(timeIntervalSince1970: ts)
             }
             if let cookie = HTTPCookie(properties: props) {
                 HTTPCookieStorage.shared.setCookie(cookie)
-                restored.append(dict)
             }
         }
-        if restored.isEmpty {
-            UserDefaults.standard.removeObject(forKey: "persistedCookies")
-        } else if restored.count != saved.count {
-            UserDefaults.standard.set(restored, forKey: "persistedCookies")
-        }
-    }
-
-    // MARK: - 저장된 세션 확인
-
-    private func checkLoginStatus() {
-        // 복원된 donga.com 쿠키가 있으면 로그인 간주 — 닉네임은 fetchProfile()로 별도 갱신
-        let allCookies = HTTPCookieStorage.shared.cookies ?? []
-        let hasDongaCookie = allCookies.contains(where: isPersistableDongaCookie)
-        let hasPersistedData = UserDefaults.standard.array(forKey: "persistedCookies") != nil
-        isLoggedIn = hasDongaCookie && hasPersistedData
     }
 }
