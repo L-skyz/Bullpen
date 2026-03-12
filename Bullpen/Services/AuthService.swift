@@ -116,13 +116,17 @@ class AuthService: ObservableObject {
     // MARK: - 아바타 URL 구성
 
     private func updateAvatarUrl() {
-        // dongauserid 쿠키 → uid 각 문자를 디렉토리로 분리한 URL 패턴
-        // 예: uid="abc123" → .../a/b/c/1/2/3/abc123@d.png
+        // mpuser 쿠키 → uid 각 문자를 디렉토리로 분리 + @ 패딩으로 총 12개
+        // 예: uid="sm12011"(7자) → s/m/1/2/0/1/1/@/@/@/@/@/sm12011@@@@@@d.png
         guard let uid = HTTPCookieStorage.shared.cookies?.first(where: {
-            $0.domain.contains("donga.com") && $0.name == "dongauserid" && !$0.value.isEmpty
+            $0.domain.contains("donga.com") && $0.name == "mpuser" && !$0.value.isEmpty
         })?.value else { return }
-        let spread = uid.map { String($0) }.joined(separator: "/")
-        avatarUrl = "https://dimg.donga.com/ugc/WWW/Profile/\(spread)/\(uid)@d.png"
+        let totalDirs = 12
+        let padding = max(0, totalDirs - uid.count)
+        let dirPart = uid.map { String($0) }.joined(separator: "/")
+            + String(repeating: "/@", count: padding)
+        let atPadding = String(repeating: "@", count: padding + 1)
+        avatarUrl = "https://dimg.donga.com/ugc/WWW/Profile/\(dirPart)/\(uid)\(atPadding)d.png"
     }
 
     // MARK: - 쿠키 영속화 (세션 유지용)
