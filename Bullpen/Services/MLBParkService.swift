@@ -35,7 +35,7 @@ actor MLBParkService {
 
     private let base = "https://mlbpark.donga.com"
     private let session: URLSession
-    private var warmedUp = false
+    private var warmupTask: Task<Void, Never>? = nil
 
     // CP949 (= Windows-949 = kCFStringEncodingDOSKorean = 0x0422)
     // String(data:encoding:) 경로는 NSStringEncoding 변환 레이어를 거쳐 간헐적으로 실패함
@@ -106,13 +106,17 @@ actor MLBParkService {
     }
 
     // gather.donga.com 쿠키 없으면 mlbpark이 테이블 없는 JS 페이지만 반환
+    // Task? 패턴: 동시 요청 시 모든 호출자가 같은 warmup Task를 await → 완료 보장
     private func warmupIfNeeded() async {
-        guard !warmedUp else { return }
-        warmedUp = true
-        guard let url = URL(string: "https://gather.donga.com/?cookie=1") else { return }
-        var req = URLRequest(url: url)
-        req.setValue("https://mlbpark.donga.com/", forHTTPHeaderField: "Referer")
-        _ = try? await performRequest(req)
+        if warmupTask == nil {
+            warmupTask = Task {
+                guard let url = URL(string: "https://gather.donga.com/?cookie=1") else { return }
+                var req = URLRequest(url: url)
+                req.setValue("https://mlbpark.donga.com/", forHTTPHeaderField: "Referer")
+                _ = try? await performRequest(req)
+            }
+        }
+        await warmupTask?.value
     }
 
     // MARK: - 공통 요청
