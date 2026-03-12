@@ -205,6 +205,12 @@ struct PostRowView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
+            if post.isListReply {
+                Image(systemName: "arrow.turn.down.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 12)
+            }
             AsyncImage(url: URL(string: post.avatarUrl)) { phase in
                 switch phase {
                 case .success(let img): img.resizable().scaledToFill()
@@ -240,6 +246,7 @@ struct PostRowView: View {
             }
         }
         .padding(.vertical, 4)
+        .padding(.leading, post.isListReply ? 14 : 0)
     }
 
     private func avatarColor(for name: String) -> Color {
@@ -248,4 +255,3 @@ struct PostRowView: View {
         return palette[abs(hash) % palette.count]
     }
 }
-

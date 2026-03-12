@@ -182,13 +182,15 @@ actor MLBParkService {
             guard firstTdColspan.isEmpty else { continue }
 
             let firstTd = try tds.get(0).text().trimmingCharacters(in: .whitespaces)
+            let isListReply = isListReplyMarker(firstTd)
 
             if isSearch {
                 // 헤더 행("게시판") 및 빈 행 제외
                 guard !firstTd.isEmpty, firstTd != "게시판" else { continue }
             } else {
-                // 글번호가 숫자 5자리 이상인 행만 (공지·헤더 제외)
-                guard firstTd.allSatisfy({ $0.isNumber }), firstTd.count >= 5 else { continue }
+                // 일반 글번호 행과 suggestion 답변글(└) 행만 허용
+                let isRegularPost = firstTd.allSatisfy({ $0.isNumber }) && firstTd.count >= 5
+                guard isRegularPost || isListReply else { continue }
             }
 
             let titleTd = tds.get(1)
@@ -218,10 +220,16 @@ actor MLBParkService {
                 id: postId, boardId: postBoardId, maemuri: maemuri,
                 title: title, author: author, avatarUrl: avatarUrl,
                 date: date, views: views, commentCount: commentCount,
-                recommendCount: 0
+                recommendCount: 0, isListReply: isListReply
             ))
         }
         return posts
+    }
+
+    private func isListReplyMarker(_ value: String) -> Bool {
+        let normalized = value.replacingOccurrences(of: "\u{00A0}", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return ["└", "ㄴ", "↳"].contains(normalized)
     }
 
     // MARK: - 베스트글
