@@ -157,7 +157,9 @@ struct PostDetailView: View {
 
     private var isMyPost: Bool {
         guard let d = vm.detail else { return false }
-        return auth.isLoggedIn && !auth.nickname.isEmpty && d.author == auth.nickname
+        let myNick = auth.nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+        let postAuthor = d.author.trimmingCharacters(in: .whitespacesAndNewlines)
+        return auth.isLoggedIn && !myNick.isEmpty && postAuthor == myNick
     }
 
     private var currentBoard: Board? {

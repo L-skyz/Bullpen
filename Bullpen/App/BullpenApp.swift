@@ -10,6 +10,11 @@ struct BullpenApp: App {
             ContentView()
                 .environmentObject(auth)
                 .environmentObject(filter)
+                .task {
+                    if auth.isLoggedIn {
+                        await auth.fetchProfile()
+                    }
+                }
         }
     }
 }

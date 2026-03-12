@@ -75,21 +75,10 @@ class AuthService: ObservableObject {
             throw MLBParkError.networkError("로그인에 실패했습니다. 다시 시도해주세요.")
         }
 
-        // Step 4: 성공 — 쿠키에서 닉네임 읽기
-        // dongausernickuni (UTF-8 유니코드) 우선, 없으면 dongausernick (EUC-KR)
-        let allCookies = HTTPCookieStorage.shared.cookies ?? []
-        let nickValue = allCookies.first(where: {
-            $0.domain.contains("donga.com") && $0.name == "dongausernickuni" &&
-            !$0.value.isEmpty && $0.value != "deleted"
-        })?.value
-        ?? allCookies.first(where: {
-            $0.domain.contains("donga.com") && $0.name == "dongausernick" &&
-            !$0.value.isEmpty && $0.value != "deleted"
-        })?.value
-        if let n = nickValue { nickname = n.removingPercentEncoding ?? n }
-
+        // Step 4: 성공 — HTML에서 닉네임 직접 추출
         isLoggedIn = true
         persistCookies()
+        await fetchProfile()
     }
 
     // MARK: - 로그아웃
@@ -208,25 +197,8 @@ class AuthService: ObservableObject {
     // MARK: - 저장된 세션 확인
 
     private func checkLoginStatus() {
+        // 복원된 donga.com 쿠키가 있으면 로그인 간주 — 닉네임은 fetchProfile()로 별도 갱신
         let allCookies = HTTPCookieStorage.shared.cookies ?? []
-
-        // 닉네임 쿠키가 있으면 확실히 로그인 상태
-        // dongausernickuni (UTF-8) 우선, 없으면 dongausernick (EUC-KR)
-        let nickValue = allCookies.first(where: {
-            $0.domain.contains("donga.com") && $0.name == "dongausernickuni" &&
-            !$0.value.isEmpty && $0.value != "deleted"
-        })?.value
-        ?? allCookies.first(where: {
-            $0.domain.contains("donga.com") && $0.name == "dongausernick" &&
-            !$0.value.isEmpty && $0.value != "deleted"
-        })?.value
-        if let n = nickValue {
-            nickname = n.removingPercentEncoding ?? n
-            isLoggedIn = true
-            return
-        }
-
-        // 닉네임 쿠키가 없어도 복원된 donga.com 쿠키가 있으면 일단 로그인 간주
         let hasDongaCookie = allCookies.contains(where: isPersistableDongaCookie)
         let hasPersistedData = UserDefaults.standard.array(forKey: "persistedCookies") != nil
         isLoggedIn = hasDongaCookie && hasPersistedData
