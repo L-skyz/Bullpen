@@ -342,10 +342,11 @@ actor MLBParkService {
             let rowId = (try? row.attr("id")) ?? ""
             let seq   = rowId.hasPrefix("reply_") ? String(rowId.dropFirst(6)) : ""
 
-            // 내 댓글 여부: row/body class 둘 다 확인
+            // 내 댓글 여부: btn_edit/btn_redel 존재 여부로 판단 (my_con은 무관)
             let rowCls  = (try? row.attr("class")) ?? ""
             let bodyCls = (try? bodyEl.attr("class")) ?? ""
-            let isOwn   = rowCls.contains("my_con") || bodyCls.contains("my_reply")
+            let isOwn   = (try? row.select("a.btn_edit").first()) != nil
+                       || (try? row.select("a.btn_redel").first()) != nil
 
             // 대댓글 여부: replied(직접 답글) 또는 replied_re(답글의 답글)
             // — replied: replyPrid == own seq (DOM 순서상 이전 최상위 댓글의 자식)
