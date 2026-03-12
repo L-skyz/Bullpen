@@ -222,7 +222,8 @@ struct PostRowView: View {
                 HStack(alignment: .center, spacing: 4) {
                     if !post.maemuri.isEmpty {
                         Text(post.maemuri)
-                            .font(.caption2).fontWeight(.semibold)
+                            .font(post.maemuri == "└" ? .body : .caption2)
+                            .fontWeight(.semibold)
                             .foregroundColor(.orange).lineLimit(1)
                     }
                     Text(post.title).font(.subheadline).lineLimit(1).truncationMode(.tail)
