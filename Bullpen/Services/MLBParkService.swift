@@ -182,15 +182,13 @@ actor MLBParkService {
             guard firstTdColspan.isEmpty else { continue }
 
             let firstTd = try tds.get(0).text().trimmingCharacters(in: .whitespaces)
-            let isReplyRow = isSuggestionReplyRow(firstTd)
 
             if isSearch {
                 // 헤더 행("게시판") 및 빈 행 제외
                 guard !firstTd.isEmpty, firstTd != "게시판" else { continue }
             } else {
-                // suggestion 답변글은 첫 칸이 숫자가 아니라 └ 로 내려온다.
-                let isNumberedPost = firstTd.allSatisfy({ $0.isNumber }) && firstTd.count >= 5
-                guard isNumberedPost || isReplyRow else { continue }
+                // 글번호가 숫자 5자리 이상인 행만 (공지·헤더 제외)
+                guard firstTd.allSatisfy({ $0.isNumber }), firstTd.count >= 5 else { continue }
             }
 
             let titleTd = tds.get(1)
@@ -200,8 +198,7 @@ actor MLBParkService {
 
             // 제목: a.txt
             guard let titleLink = try titleTd.select("a.txt").first() else { continue }
-            let rawTitle = try titleLink.text()
-            let title = isReplyRow ? "└ \(rawTitle)" : rawTitle
+            let title = try titleLink.text()
             guard !title.isEmpty else { continue }
             let href  = try titleLink.attr("href")
             guard let postId = extractParam("id", from: href) else { continue }
@@ -225,12 +222,6 @@ actor MLBParkService {
             ))
         }
         return posts
-    }
-
-    private func isSuggestionReplyRow(_ value: String) -> Bool {
-        let normalized = value.replacingOccurrences(of: "\u{00A0}", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return normalized == "└"
     }
 
     // MARK: - 베스트글
