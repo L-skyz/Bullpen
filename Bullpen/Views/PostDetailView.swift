@@ -258,6 +258,15 @@ struct PostDetailView: View {
                                     .foregroundColor(.secondary)
                                 Text("댓글 \(d.commentCount)개")
                                     .font(.headline)
+                                Spacer()
+                                Button {
+                                    Task { await vm.load(boardId: boardId, postId: postId) }
+                                } label: {
+                                    Image(systemName: "arrow.clockwise")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                                .disabled(vm.isLoading)
                             }
                             .padding(.horizontal).padding(.top, 12).padding(.bottom, 4)
 

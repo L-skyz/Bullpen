@@ -98,7 +98,15 @@ actor MLBParkService {
         config.httpCookieAcceptPolicy = .always
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.urlCache = nil
-        session = URLSession(configuration: config)
+        let s = URLSession(configuration: config)
+        session = s
+        // 앱 시작 즉시 warmup → 첫 게시판 로드 지연 최소화
+        warmupTask = Task {
+            guard let url = URL(string: "https://gather.donga.com/?cookie=1") else { return }
+            var req = URLRequest(url: url)
+            req.setValue("https://mlbpark.donga.com/", forHTTPHeaderField: "Referer")
+            _ = try? await s.data(for: req)
+        }
     }
 
     private func performRequest(_ req: URLRequest) async throws -> (Data, URLResponse) {
@@ -108,14 +116,6 @@ actor MLBParkService {
     // gather.donga.com 쿠키 없으면 mlbpark이 테이블 없는 JS 페이지만 반환
     // Task? 패턴: 동시 요청 시 모든 호출자가 같은 warmup Task를 await → 완료 보장
     private func warmupIfNeeded() async {
-        if warmupTask == nil {
-            warmupTask = Task {
-                guard let url = URL(string: "https://gather.donga.com/?cookie=1") else { return }
-                var req = URLRequest(url: url)
-                req.setValue("https://mlbpark.donga.com/", forHTTPHeaderField: "Referer")
-                _ = try? await performRequest(req)
-            }
-        }
         await warmupTask?.value
     }
 
@@ -210,8 +210,14 @@ actor MLBParkService {
             // 말머리: a.list_word (답변 행은 "└" 표시)
             let maemuri = isReplyRow ? "└" : (try titleTd.select("a.list_word").first()?.text() ?? "")
 
-            // 제목: a.txt
-            guard let titleLink = try titleTd.select("a.txt").first() else { continue }
+            // 제목: a.txt (답변행은 a.txt 없을 수 있으므로 a 폴백)
+            let titleLink: Element?
+            if isReplyRow {
+                titleLink = try titleTd.select("a.txt").first() ?? titleTd.select("a").first()
+            } else {
+                titleLink = try titleTd.select("a.txt").first()
+            }
+            guard let titleLink else { continue }
             let title = try titleLink.text().trimmingCharacters(in: .whitespacesAndNewlines)
             guard !title.isEmpty else { continue }
             let href  = try titleLink.attr("href")
