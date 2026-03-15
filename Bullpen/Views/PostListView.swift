@@ -78,8 +78,8 @@ struct PostListView: View {
     @EnvironmentObject var filter: BlockFilter
     @StateObject private var vm = PostListViewModel()
     @State private var selectedMaemuri = "전체"
-    @State private var scrollPosition = ScrollPosition(idType: String.self)
     @State private var initializedBoardID: String?
+    @State private var scrollToTopTrigger = 0
     @State private var showSearch = false
     @State private var showLoginAlert = false
     @State private var pendingPost: Post? = nil
@@ -96,44 +96,47 @@ struct PostListView: View {
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(filteredPosts) { post in
-                    VStack(spacing: 0) {
-                        Button {
-                            if isRestricted(post.maemuri) && !auth.isLoggedIn {
-                                showLoginAlert = true
-                            } else {
-                                pendingPost = post
-                            }
-                        } label: {
-                            PostRowView(post: post)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                        }
-                        .buttonStyle(.plain)
-                        Divider().padding(.leading, 44)
+        ScrollViewReader { proxy in
+        List {
+            ForEach(filteredPosts) { post in
+                Button {
+                    if isRestricted(post.maemuri) && !auth.isLoggedIn {
+                        showLoginAlert = true
+                    } else {
+                        pendingPost = post
                     }
-                    .id(post.id)
-                    .onAppear {
-                        // 마지막 5개 안에 들어오면 미리 로드 (빠른 스크롤 대응)
-                        if vm.posts.suffix(5).contains(where: { $0.id == post.id }) {
-                            Task { await vm.load(boardId: board.id, maemuri: activeMaemuri) }
-                        }
+                } label: {
+                    PostRowView(post: post)
+                }
+                .buttonStyle(.plain)
+                .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
+                .listRowSeparator(.hidden)
+                .id(post.id)
+                .onAppear {
+                    // 마지막 5개 안에 들어오면 미리 로드 (빠른 스크롤 대응)
+                    if vm.posts.suffix(5).contains(where: { $0.id == post.id }) {
+                        Task { await vm.load(boardId: board.id, maemuri: activeMaemuri) }
                     }
                 }
-                if vm.isLoading { HStack { Spacer(); ProgressView(); Spacer() }.padding() }
-                if let err = vm.error { Text(err).foregroundColor(.red).font(.caption).padding() }
+            }
+            if vm.isLoading {
+                HStack { Spacer(); ProgressView(); Spacer() }.padding()
+                    .listRowSeparator(.hidden)
+            }
+            if let err = vm.error {
+                Text(err).foregroundColor(.red).font(.caption).padding()
+                    .listRowSeparator(.hidden)
             }
         }
+        .listStyle(.plain)
         .refreshable {
             await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true)
-            if !Task.isCancelled {
-                scrollPosition = ScrollPosition(idType: String.self)
-            }
+            if let first = filteredPosts.first { proxy.scrollTo(first.id, anchor: .top) }
         }
-        .scrollBounceBehavior(.always)
-        .scrollPosition($scrollPosition)
+        .onChange(of: scrollToTopTrigger) { _, _ in
+            if let first = filteredPosts.first { proxy.scrollTo(first.id, anchor: .top) }
+        }
+        } // ScrollViewReader
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -150,7 +153,7 @@ struct PostListView: View {
                             Button {
                                 guard m != selectedMaemuri else { return }
                                 selectedMaemuri = m
-                                scrollPosition = ScrollPosition(idType: String.self)
+                                scrollToTopTrigger += 1
                                 Task { await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true) }
                             } label: {
                                 if m == selectedMaemuri { Label(m, systemImage: "checkmark") }
@@ -188,7 +191,7 @@ struct PostListView: View {
             guard initializedBoardID != board.id else { return }
             initializedBoardID = board.id
             selectedMaemuri = "전체"
-            scrollPosition = ScrollPosition(idType: String.self)
+            scrollToTopTrigger += 1
             await vm.load(boardId: board.id, reset: true)
         }
     }

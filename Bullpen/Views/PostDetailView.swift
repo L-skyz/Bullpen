@@ -328,7 +328,7 @@ struct PostDetailView: View {
                                     .frame(minHeight: 110, alignment: .top)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 12)
-                                    .background(Color.white)
+                                    .background(Color(.systemBackground))
                                     .clipShape(RoundedRectangle(cornerRadius: 12))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 12)
