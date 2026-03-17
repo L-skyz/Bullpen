@@ -18,7 +18,14 @@ class AuthService: ObservableObject {
         config.httpCookieAcceptPolicy = .always
         session = URLSession(configuration: config)
         restorePersistedCookies()
-        // 로그인 상태·닉네임은 BullpenApp.task에서 fetchProfile()로 확인
+        // 저장된 프로필이 있으면 즉시 복원 (네트워크 대기 없이 UI 표시)
+        if let saved = UserDefaults.standard.dictionary(forKey: "persistedProfile") as? [String: String],
+           let name = saved["nickname"], !name.isEmpty {
+            isLoggedIn = true
+            nickname   = name
+            avatarUrl  = saved["avatarUrl"] ?? ""
+        }
+        // 실제 검증은 BullpenApp.task에서 fetchProfile()로 수행
     }
 
     // MARK: - 로그인
@@ -73,9 +80,10 @@ class AuthService: ObservableObject {
             throw MLBParkError.networkError("로그인에 실패했습니다. 다시 시도해주세요.")
         }
 
-        // Step 4: 성공 — 쿠키 저장 후 HTML에서 닉네임 직접 파싱
+        // Step 4: 성공 — 쿠키 저장 후 프로필 확인
         persistCookies()
         await fetchProfile()
+        persistProfile()
     }
 
     // MARK: - 로그아웃
@@ -85,6 +93,7 @@ class AuthService: ObservableObject {
         nickname = ""
         avatarUrl = ""
         UserDefaults.standard.removeObject(forKey: "persistedCookies")
+        UserDefaults.standard.removeObject(forKey: "persistedProfile")
         HTTPCookieStorage.shared.cookies?
             .filter { $0.domain.contains("donga.com") }
             .forEach { HTTPCookieStorage.shared.deleteCookie($0) }
@@ -103,10 +112,12 @@ class AuthService: ObservableObject {
                     if !extracted.isEmpty { nickname = extracted }
                 }
                 updateAvatarUrl()
+                persistProfile()
             } else {
                 isLoggedIn = false
                 nickname   = ""
                 avatarUrl  = ""
+                UserDefaults.standard.removeObject(forKey: "persistedProfile")
             }
         } catch {
             // 네트워크 오류 시 기존 상태 유지
@@ -127,6 +138,16 @@ class AuthService: ObservableObject {
             + String(repeating: "/@", count: padding)
         let atPadding = String(repeating: "@", count: padding + 1)
         avatarUrl = "https://dimg.donga.com/ugc/WWW/Profile/\(dirPart)/\(uid)\(atPadding)d.png"
+    }
+
+    // MARK: - 프로필 영속화 (빠른 복원용)
+
+    private func persistProfile() {
+        guard isLoggedIn, !nickname.isEmpty else { return }
+        UserDefaults.standard.set(
+            ["nickname": nickname, "avatarUrl": avatarUrl],
+            forKey: "persistedProfile"
+        )
     }
 
     // MARK: - 쿠키 영속화 (세션 유지용)
