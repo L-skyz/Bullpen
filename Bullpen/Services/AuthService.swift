@@ -118,6 +118,11 @@ class AuthService: ObservableObject {
                 nickname   = ""
                 avatarUrl  = ""
                 UserDefaults.standard.removeObject(forKey: "persistedProfile")
+                // 세션 만료 시 저장된 쿠키 즉시 정리 → 다음 실행 시 만료 쿠키로 인한 지연 방지
+                UserDefaults.standard.removeObject(forKey: "persistedCookies")
+                HTTPCookieStorage.shared.cookies?
+                    .filter { $0.domain.contains("donga.com") }
+                    .forEach { HTTPCookieStorage.shared.deleteCookie($0) }
             }
         } catch {
             // 네트워크 오류 시 기존 상태 유지
