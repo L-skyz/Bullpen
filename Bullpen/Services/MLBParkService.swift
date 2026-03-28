@@ -101,11 +101,21 @@ actor MLBParkService {
         let s = URLSession(configuration: config)
         session = s
         // 앱 시작 즉시 warmup → 첫 게시판 로드 지연 최소화
+        // httpShouldHandleCookies = false: 저장된 auth 쿠키(.donga.com)를 gather에 보내지 않음
+        // → 로그인 상태에서 gather 서버의 불필요한 인증 처리를 방지해 응답 속도 개선
         warmupTask = Task {
             guard let url = URL(string: "https://gather.donga.com/?cookie=1") else { return }
             var req = URLRequest(url: url)
+            req.timeoutInterval = 5
+            req.httpShouldHandleCookies = false
             req.setValue("https://mlbpark.donga.com/", forHTTPHeaderField: "Referer")
-            _ = try? await s.data(for: req)
+            // 쿠키 자동 처리를 끄면 응답 쿠키도 저장 안 되므로 수동으로 저장
+            if let (_, response) = try? await s.data(for: req),
+               let httpResp = response as? HTTPURLResponse,
+               let fields = httpResp.allHeaderFields as? [String: String] {
+                HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
+                    .forEach { HTTPCookieStorage.shared.setCookie($0) }
+            }
         }
     }
 
