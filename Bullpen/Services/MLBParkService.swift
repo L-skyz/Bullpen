@@ -110,9 +110,12 @@ actor MLBParkService {
             req.httpShouldHandleCookies = false
             req.setValue("https://mlbpark.donga.com/", forHTTPHeaderField: "Referer")
             // 쿠키 자동 처리를 끄면 응답 쿠키도 저장 안 되므로 수동으로 저장
-            if let (_, response) = try? await s.data(for: req),
-               let httpResp = response as? HTTPURLResponse,
-               let fields = httpResp.allHeaderFields as? [String: String] {
+            if let result = try? await s.data(for: req),
+               let httpResp = result.1 as? HTTPURLResponse {
+                var fields: [String: String] = [:]
+                for (key, value) in httpResp.allHeaderFields {
+                    if let k = key as? String, let v = value as? String { fields[k] = v }
+                }
                 HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
                     .forEach { HTTPCookieStorage.shared.setCookie($0) }
             }
