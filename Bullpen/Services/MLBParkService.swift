@@ -100,20 +100,12 @@ actor MLBParkService {
         config.urlCache = nil
         let s = URLSession(configuration: config)
         session = s
-        // gather.donga.com 쿠키가 이미 복원되어 있으면 불필요한 네트워크 요청 생략
-        let hasGatherCookie = HTTPCookieStorage.shared.cookies?.contains(where: {
-            $0.domain.contains("gather.donga.com") && !$0.value.isEmpty
-        }) == true
-
-        if !hasGatherCookie {
-            // 앱 시작 즉시 warmup → 첫 게시판 로드 지연 최소화
-            warmupTask = Task {
-                guard let url = URL(string: "https://gather.donga.com/?cookie=1") else { return }
-                var req = URLRequest(url: url)
-                req.timeoutInterval = 5   // 5초 내 응답 없으면 포기, 이후 요청에서 재시도
-                req.setValue("https://mlbpark.donga.com/", forHTTPHeaderField: "Referer")
-                _ = try? await s.data(for: req)
-            }
+        // 앱 시작 즉시 warmup → 첫 게시판 로드 지연 최소화
+        warmupTask = Task {
+            guard let url = URL(string: "https://gather.donga.com/?cookie=1") else { return }
+            var req = URLRequest(url: url)
+            req.setValue("https://mlbpark.donga.com/", forHTTPHeaderField: "Referer")
+            _ = try? await s.data(for: req)
         }
     }
 
