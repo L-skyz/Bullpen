@@ -77,6 +77,8 @@ struct PostListView: View {
     @EnvironmentObject var auth: AuthService
     @EnvironmentObject var filter: BlockFilter
     @StateObject private var vm = PostListViewModel()
+    @StateObject private var kboVM = KboScoreViewModel()
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selectedMaemuri = "전체"
     @State private var initializedBoardID: String?
     @State private var scrollToTopTrigger = 0
@@ -98,6 +100,12 @@ struct PostListView: View {
     var body: some View {
         ScrollViewReader { proxy in
         List {
+            if board.id == "kbotown" {
+                KboScoreBannerView(vm: kboVM)
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
             ForEach(filteredPosts) { post in
                 Button {
                     if isRestricted(post.maemuri) && !auth.isLoggedIn {
@@ -130,7 +138,10 @@ struct PostListView: View {
         }
         .listStyle(.plain)
         .refreshable {
-            await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true)
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true) }
+                if board.id == "kbotown" { group.addTask { await kboVM.refresh() } }
+            }
             if let first = filteredPosts.first { proxy.scrollTo(first.id, anchor: .top) }
         }
         .onChange(of: scrollToTopTrigger) { _, _ in
@@ -193,6 +204,11 @@ struct PostListView: View {
             selectedMaemuri = "전체"
             scrollToTopTrigger += 1
             await vm.load(boardId: board.id, reset: true)
+            if board.id == "kbotown" { kboVM.start() }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard board.id == "kbotown" else { return }
+            if newPhase == .active { kboVM.start() } else { kboVM.stop() }
         }
     }
 

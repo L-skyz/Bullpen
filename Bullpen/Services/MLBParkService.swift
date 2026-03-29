@@ -156,6 +156,86 @@ actor MLBParkService {
         return result
     }
 
+    // MARK: - KBO 라이브스코어
+
+    func fetchKboScores() async throws -> [KboGame] {
+        let kboBase = "https://www.koreabaseball.com"
+        guard let url = URL(string: "\(kboBase)/Schedule/ScoreBoard.aspx") else {
+            throw MLBParkError.invalidURL
+        }
+        var req = URLRequest(url: url)
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
+        req.setValue(kboBase, forHTTPHeaderField: "Referer")
+        req.setValue("ko-KR,ko;q=0.9", forHTTPHeaderField: "Accept-Language")
+        let (data, response) = try await performRequest(req)
+        guard let html = Self.decodeServerText(data, response: response) else {
+            throw MLBParkError.encodingError
+        }
+
+        let doc = try SwiftSoup.parse(html)
+        let today = Self.kstDateString()
+        let rows = try doc.select(".smsScore")
+        guard !rows.isEmpty() else { return [] }
+
+        return try rows.array().compactMap { row -> KboGame? in
+            let awayName  = try row.select(".leftTeam .teamT").first()?.text() ?? ""
+            let awayLogo  = try row.select(".leftTeam .team img").first()?.attr("src") ?? ""
+            let awayScore = try row.select(".leftTeam .score span").first()?.text() ?? "-"
+            let homeName  = try row.select(".rightTeam .teamT").first()?.text() ?? ""
+            let homeLogo  = try row.select(".rightTeam .team img").first()?.attr("src") ?? ""
+            let homeScore = try row.select(".rightTeam .score span").first()?.text() ?? "-"
+            let inning    = try row.select(".flag span").first()?.text() ?? ""
+            let place     = try row.select(".place").first()?.text() ?? ""
+
+            guard !awayName.isEmpty, !homeName.isEmpty else { return nil }
+
+            let isLive = inning != "경기종료" && inning != "경기예정" && !inning.isEmpty
+
+            // BSO + 베이스 (라이브 중에만 유효)
+            var outs = -1; var balls = -1; var strikes = -1
+            var base1 = false; var base2 = false; var base3 = false
+            if isLive {
+                base1 = (try? row.select(".base1 img").first()?.attr("src"))?.contains("base_on") ?? false
+                base2 = (try? row.select(".base2 img").first()?.attr("src"))?.contains("base_on") ?? false
+                base3 = (try? row.select(".base3 img").first()?.attr("src"))?.contains("base_on") ?? false
+                // ".base p" 텍스트: "3-2 2out" 형식
+                if let bsoText = try? row.select(".base p").first()?.text() {
+                    // 아웃 수: span 안 숫자
+                    if let outStr = try? row.select(".base p span").first()?.text() {
+                        outs = Int(outStr) ?? -1
+                    }
+                    // 볼-스트라이크: "3-2" 부분
+                    let bsoPart = bsoText.components(separatedBy: " ").first ?? ""
+                    let bsParts = bsoPart.components(separatedBy: "-")
+                    if bsParts.count == 2 {
+                        balls   = Int(bsParts[0]) ?? -1
+                        strikes = Int(bsParts[1]) ?? -1
+                    }
+                }
+            }
+
+            let logoPrefix = "https:"
+            return KboGame(
+                id: "\(awayName)_\(homeName)_\(today)",
+                isLive: isLive,
+                inning: inning,
+                location: place,
+                home: KboTeamScore(name: homeName, logoURL: homeLogo.hasPrefix("//") ? logoPrefix + homeLogo : homeLogo, score: homeScore),
+                away: KboTeamScore(name: awayName, logoURL: awayLogo.hasPrefix("//") ? logoPrefix + awayLogo : awayLogo, score: awayScore),
+                outs: outs, balls: balls, strikes: strikes,
+                base1: base1, base2: base2, base3: base3
+            )
+        }
+    }
+
+    private static func kstDateString() -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyyMMdd"
+        fmt.timeZone = TimeZone(identifier: "Asia/Seoul")
+        return fmt.string(from: Date())
+    }
+
     // MARK: - 게시글 목록
 
     func fetchPosts(boardId: String, page: Int = 1) async throws -> [Post] {
