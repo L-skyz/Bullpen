@@ -15,9 +15,23 @@
 
 ## 2. 데이터 소스
 
-- **URL:** `https://www.statiz.co.kr` 라이브스코어 페이지 (구현 단계에서 정확한 경로 및 DOM 셀렉터 확인)
-- **방식:** URLSession HTTP GET → HTML 파싱 (SwiftSoup 또는 정규식)
+- **URL:** `https://www.statiz.co.kr` 라이브스코어 페이지
+  - ⚠️ 구현 시작 전 Chrome DevTools로 정확한 경로 및 DOM 셀렉터를 먼저 확인한다 (사전 분석 필수 단계)
+  - 예상 후보: `https://www.statiz.co.kr/schedule.php` 또는 유사 경로
+- **방식:** URLSession HTTP GET → HTML 파싱 (SwiftSoup — 프로젝트에 이미 의존성 존재)
 - **파싱 결과:** 기존 `KboGame` / `KboTeamScore` 모델로 매핑
+
+### KboGame.id 합성 규칙
+Statiz HTML에 mlbpark의 `linkMatchPage()` 같은 match ID가 없을 수 있으므로, 다음 키를 사용:
+```
+id = "\(away.name)_\(home.name)_\(today)"   // e.g. "KIA_LG_20260329"
+// today = DateFormatter format "yyyyMMdd", timezone "Asia/Seoul" (KST 기준)
+```
+
+### KboTeamScore.logoURL
+Statiz는 팀 로고 URL을 제공하지 않을 수 있다.
+- `logoURL`은 빈 문자열(`""`)로 설정
+- 카드 UI는 항상 팀명 첫 글자 원형 폴백을 사용
 
 ### KboGame 모델 (기존, 변경 없음)
 ```swift
@@ -61,8 +75,8 @@ PostListView (board == "kbotown")
 ┌──────────────┐
 │ [LIVE] 4회말 │  ← 배지 영역: LIVE(빨강) / 종료(회색) / 시간(기본)
 │ ──────────── │
-│ 🔴 LG    3  │  ← 홈팀: 로고 + 팀명 + 스코어 (이긴 팀 볼드)
-│ 🔵 KIA   2  │  ← 어웨이팀
+│ 🅛 LG    3  │  ← 홈팀: 팀명 첫 글자 원형 + 팀명 + 스코어 (이긴 팀 볼드)
+│ 🅚 KIA   2  │  ← 어웨이팀
 │ 잠실        │  ← 구장
 └──────────────┘
 ```
@@ -70,7 +84,7 @@ PostListView (board == "kbotown")
 - 카드 너비: ~120pt, 세로: ~130pt
 - LIVE 카드: 빨간 테두리 또는 배경 강조
 - 스코어 미시작: `-` 표시
-- 팀 로고: `AsyncImage`, 실패 시 팀명 첫 글자 원형 폴백
+- 팀 로고: 팀명 첫 글자 원형 (logoURL 항상 빈 값이므로 폴백만 사용)
 
 ### 3-3. 헤더 바
 
@@ -85,11 +99,22 @@ PostListView (board == "kbotown")
 |------|-----------|
 | 라이브 경기 있음 | 30초 |
 | 라이브 없음 (예정/종료만) | 5분 |
-| 백그라운드 | 중단 (Task 자동 suspend) |
-| 포그라운드 복귀 | 즉시 1회 fetch |
+| 백그라운드 | scenePhase 감지 시 Task cancel |
+| 포그라운드 복귀 | scenePhase 감지 시 Task 재시작 + 즉시 1회 fetch |
 
 - `Task` 기반 폴링 루프 (`Task.sleep`)
-- `@Environment(\.scenePhase)` 감지로 포그라운드/백그라운드 전환 처리
+- `@Environment(\.scenePhase)` onChange에서 `.active` → Task 시작, 그 외 → Task cancel
+- Task는 배경 전환 시 자동으로 멈추지 않으므로, 반드시 명시적 cancel 처리
+- 매 fetch 후 `games.contains { $0.isLive }` 결과에 따라 다음 sleep 간격 결정
+
+### 오류 처리
+- `@Published var error: String?` 보유
+- fetch 실패 시 `error` 설정, 배너 전체 숨김 (게시글 목록 영향 없음)
+- 다음 폴링 사이클에서 재시도, 성공 시 `error` 초기화
+
+### Pull-to-refresh 연동
+`PostListView`의 `.refreshable` 블록에서 게시글 로드와 함께 `KboScoreViewModel.refresh()`도 호출한다.
+배너의 수동 새로고침 버튼도 동일한 `refresh()` 메서드를 호출한다.
 
 ---
 
@@ -98,14 +123,22 @@ PostListView (board == "kbotown")
 | 파일 | 변경 내용 |
 |------|-----------|
 | `Services/MLBParkService.swift` | `fetchKboScores() async throws -> [KboGame]` 추가 |
-| `ViewModels/KboScoreViewModel.swift` | 신규: 폴링 로직, `@Published var games` |
-| `Views/KboScoreBannerView.swift` | 신규: 배너 + 카드 뷰 |
-| `Views/PostListView.swift` | `kbotown` 조건으로 배너 삽입 |
-| `Models/KboGame.swift` | 변경 없음 |
+| `ViewModels/KboScoreViewModel.swift` | 신규 (디렉토리 `Bullpen/ViewModels/` 도 신규 생성): 폴링 로직, `@Published var games`, `@Published var error: String?`, `refresh()` |
+| `Views/KboScoreBannerView.swift` | 신규: 배너 + 카드 뷰 (오류 시 배너 숨김) |
+| `Views/PostListView.swift` | `kbotown` 조건으로 배너 삽입, `.refreshable`에 `refresh()` 추가 |
+| `Models/KboGame.swift` | `id` 필드 주석 업데이트: `linkMatchPage` → 합성 키 방식으로 변경 |
 
 ---
 
-## 6. 스코프 외 (이번 작업에 포함하지 않음)
+## 6. 구현 사전 단계
+
+1. Chrome DevTools로 `statiz.co.kr` 라이브스코어 페이지 DOM 분석
+2. 경기 행 컨테이너 셀렉터, 팀명, 스코어, 이닝/상태, 구장 셀렉터 확인
+3. `fetchKboScores()` 파싱 로직 작성 전에 셀렉터 목록 확정
+
+---
+
+## 7. 스코프 외 (이번 작업에 포함하지 않음)
 
 - 경기 카드 탭 → 상세 경기 화면 이동
 - MLB 게시판용 MLB 스코어 배너
