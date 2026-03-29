@@ -95,17 +95,21 @@ PostListView (board == "kbotown")
 
 ## 4. 갱신 정책
 
-| 상태 | 폴링 간격 |
-|------|-----------|
-| 라이브 경기 있음 | 30초 |
-| 라이브 없음 (예정/종료만) | 5분 |
+시간 하드코딩 없이 **스탯티즈 응답 데이터로 폴링 여부를 판단**한다.
+
+| fetch 결과 | 다음 동작 |
+|------------|-----------|
+| LIVE 경기 있음 | 30초 후 재fetch |
+| 예정 경기만 있음 | 5분 후 재fetch (경기 시작 감지) |
+| 전부 종료 | 폴링 중단, 배너는 종료 스코어 유지 |
+| 빈 배열 (오늘 경기 없음) | 폴링 중단, 배너 숨김 |
 | 백그라운드 | scenePhase 감지 시 Task cancel |
 | 포그라운드 복귀 | scenePhase 감지 시 Task 재시작 + 즉시 1회 fetch |
 
 - `Task` 기반 폴링 루프 (`Task.sleep`)
 - `@Environment(\.scenePhase)` onChange에서 `.active` → Task 시작, 그 외 → Task cancel
 - Task는 배경 전환 시 자동으로 멈추지 않으므로, 반드시 명시적 cancel 처리
-- 매 fetch 후 `games.contains { $0.isLive }` 결과에 따라 다음 sleep 간격 결정
+- 매 fetch 후 결과 상태에 따라 다음 sleep 간격 결정 (위 표 기준)
 
 ### 오류 처리
 - `@Published var error: String?` 보유
