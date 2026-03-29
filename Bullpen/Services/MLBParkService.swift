@@ -215,12 +215,18 @@ actor MLBParkService {
                 }
             }
 
+            // ".place" 텍스트: "잠실 18:30" → 구장명 + 시각 분리
+            let placeParts = place.components(separatedBy: " ")
+            let locationName = placeParts.first ?? place
+            let gameTime = placeParts.count >= 2 ? placeParts.last ?? "" : ""
+
             let logoPrefix = "https:"
             return KboGame(
                 id: "\(awayName)_\(homeName)_\(today)",
                 isLive: isLive,
                 inning: inning,
-                location: place,
+                location: locationName,
+                gameTime: gameTime,
                 home: KboTeamScore(name: homeName, logoURL: homeLogo.hasPrefix("//") ? logoPrefix + homeLogo : homeLogo, score: homeScore),
                 away: KboTeamScore(name: awayName, logoURL: awayLogo.hasPrefix("//") ? logoPrefix + awayLogo : awayLogo, score: awayScore),
                 outs: outs, balls: balls, strikes: strikes,
