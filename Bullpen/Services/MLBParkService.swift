@@ -36,6 +36,7 @@ actor MLBParkService {
     private let base = "https://mlbpark.donga.com"
     private let session: URLSession
     private var warmupTask: Task<Void, Never>? = nil
+    private var lastWarmupDate: Date = .distantPast
 
     // CP949 (= Windows-949 = kCFStringEncodingDOSKorean = 0x0422)
     // String(data:encoding:) 경로는 NSStringEncoding 변환 레이어를 거쳐 간헐적으로 실패함
@@ -103,23 +104,51 @@ actor MLBParkService {
         // 앱 시작 즉시 warmup → 첫 게시판 로드 지연 최소화
         // httpShouldHandleCookies = false: 저장된 auth 쿠키(.donga.com)를 gather에 보내지 않음
         // → 로그인 상태에서 gather 서버의 불필요한 인증 처리를 방지해 응답 속도 개선
-        warmupTask = Task {
-            guard let url = URL(string: "https://gather.donga.com/?cookie=1") else { return }
-            var req = URLRequest(url: url)
-            req.timeoutInterval = 5
-            req.httpShouldHandleCookies = false
-            req.setValue("https://mlbpark.donga.com/", forHTTPHeaderField: "Referer")
-            // 쿠키 자동 처리를 끄면 응답 쿠키도 저장 안 되므로 수동으로 저장
-            if let result = try? await s.data(for: req),
-               let httpResp = result.1 as? HTTPURLResponse {
-                var fields: [String: String] = [:]
-                for (key, value) in httpResp.allHeaderFields {
-                    if let k = key as? String, let v = value as? String { fields[k] = v }
-                }
-                HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
-                    .forEach { HTTPCookieStorage.shared.setCookie($0) }
-            }
+        warmupTask = Self.makeWarmupTask(session: s)
+        lastWarmupDate = Date()
+    }
+
+    // 포그라운드 복귀 시 호출 — 30분 이상 지났을 때만 세션 재워밍
+    func resetWarmup() {
+        guard Date().timeIntervalSince(lastWarmupDate) > 1800 else { return }
+        lastWarmupDate = Date()
+        warmupTask?.cancel()
+        warmupTask = Self.makeWarmupTask(session: session)
+    }
+
+    // gather 쿠키 갱신 + mlbpark 세션 ping 동시 실행
+    nonisolated private static func makeWarmupTask(session: URLSession) -> Task<Void, Never> {
+        Task {
+            async let gather: Void = gatherWarmup(session: session)
+            async let ping: Void   = sessionPing(session: session)
+            _ = await (gather, ping)
         }
+    }
+
+    nonisolated private static func gatherWarmup(session: URLSession) async {
+        guard let url = URL(string: "https://gather.donga.com/?cookie=1") else { return }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 5
+        req.httpShouldHandleCookies = false
+        req.setValue("https://mlbpark.donga.com/", forHTTPHeaderField: "Referer")
+        guard let result = try? await session.data(for: req),
+              let httpResp = result.1 as? HTTPURLResponse else { return }
+        var fields: [String: String] = [:]
+        for (key, value) in httpResp.allHeaderFields {
+            if let k = key as? String, let v = value as? String { fields[k] = v }
+        }
+        HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
+            .forEach { HTTPCookieStorage.shared.setCookie($0) }
+    }
+
+    // mlbpark 세션 쿠키를 서버에 전송해 서버 측 세션 TTL 갱신
+    // 만료된 세션이라면 이 요청이 "첫 느린 요청"을 대신 부담 → 이후 fetchPosts는 워밍된 세션으로 빠르게 응답
+    nonisolated private static func sessionPing(session: URLSession) async {
+        guard let url = URL(string: "https://mlbpark.donga.com/mp/") else { return }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 8
+        req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        _ = try? await session.data(for: req)
     }
 
     private func performRequest(_ req: URLRequest) async throws -> (Data, URLResponse) {
