@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 @MainActor
 class AuthService: ObservableObject {
@@ -10,6 +11,7 @@ class AuthService: ObservableObject {
 
     private let base = "https://mlbpark.donga.com"
     private let session: URLSession
+    private var isReloginInProgress = false
 
     private init() {
         let config = URLSessionConfiguration.default
@@ -80,7 +82,8 @@ class AuthService: ObservableObject {
             throw MLBParkError.networkError("로그인에 실패했습니다. 다시 시도해주세요.")
         }
 
-        // Step 4: 성공 — 쿠키 저장 후 프로필 확인
+        // Step 4: 성공 — 자격증명·쿠키 저장 후 프로필 확인
+        saveCredentials(id: id, password: password)
         persistCookies()
         await fetchProfile()
         persistProfile()
@@ -92,6 +95,7 @@ class AuthService: ObservableObject {
         isLoggedIn = false
         nickname = ""
         avatarUrl = ""
+        clearCredentials()
         UserDefaults.standard.removeObject(forKey: "persistedCookies")
         UserDefaults.standard.removeObject(forKey: "persistedProfile")
         HTTPCookieStorage.shared.cookies?
@@ -114,10 +118,32 @@ class AuthService: ObservableObject {
                 updateAvatarUrl()
                 persistProfile()
             } else {
-                isLoggedIn = false
-                nickname   = ""
-                avatarUrl  = ""
-                UserDefaults.standard.removeObject(forKey: "persistedProfile")
+                // 세션 만료 — Keychain 자격증명으로 자동 재로그인 시도
+                if !isReloginInProgress, let (id, pw) = loadCredentials() {
+                    isReloginInProgress = true
+                    defer { isReloginInProgress = false }
+                    // 만료된 쿠키 정리 후 재로그인
+                    HTTPCookieStorage.shared.cookies?
+                        .filter { $0.domain.contains("donga.com") }
+                        .forEach { HTTPCookieStorage.shared.deleteCookie($0) }
+                    UserDefaults.standard.removeObject(forKey: "persistedCookies")
+                    do {
+                        try await login(id: id, password: pw)
+                        // login()이 내부적으로 fetchProfile()까지 완료함
+                    } catch {
+                        // 재로그인 실패 (비번 변경 등) → 자격증명 폐기, 로그아웃 처리
+                        clearCredentials()
+                        isLoggedIn = false
+                        nickname   = ""
+                        avatarUrl  = ""
+                        UserDefaults.standard.removeObject(forKey: "persistedProfile")
+                    }
+                } else {
+                    isLoggedIn = false
+                    nickname   = ""
+                    avatarUrl  = ""
+                    UserDefaults.standard.removeObject(forKey: "persistedProfile")
+                }
             }
         } catch {
             // 네트워크 오류 시 기존 상태 유지
@@ -148,6 +174,49 @@ class AuthService: ObservableObject {
             ["nickname": nickname, "avatarUrl": avatarUrl],
             forKey: "persistedProfile"
         )
+    }
+
+    // MARK: - Keychain 자격증명 (자동 재로그인용)
+
+    private static let keychainService = "com.bullpen.auth"
+    private static let keychainAccount = "login_credentials"
+
+    private func saveCredentials(id: String, password: String) {
+        guard let data = try? JSONSerialization.data(withJSONObject: ["id": id, "pw": password]) else { return }
+        let query: [CFString: Any] = [
+            kSecClass:           kSecClassGenericPassword,
+            kSecAttrService:     Self.keychainService,
+            kSecAttrAccount:     Self.keychainAccount,
+            kSecValueData:       data,
+            kSecAttrAccessible:  kSecAttrAccessibleWhenUnlocked
+        ]
+        SecItemDelete(query as CFDictionary)
+        SecItemAdd(query as CFDictionary, nil)
+    }
+
+    private func loadCredentials() -> (id: String, password: String)? {
+        let query: [CFString: Any] = [
+            kSecClass:        kSecClassGenericPassword,
+            kSecAttrService:  Self.keychainService,
+            kSecAttrAccount:  Self.keychainAccount,
+            kSecReturnData:   true,
+            kSecMatchLimit:   kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data,
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+              let id = dict["id"], let pw = dict["pw"] else { return nil }
+        return (id, pw)
+    }
+
+    private func clearCredentials() {
+        let query: [CFString: Any] = [
+            kSecClass:       kSecClassGenericPassword,
+            kSecAttrService: Self.keychainService,
+            kSecAttrAccount: Self.keychainAccount
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 
     // MARK: - 쿠키 영속화 (세션 유지용)
