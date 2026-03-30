@@ -11,9 +11,6 @@ struct BullpenApp: App {
             ContentView()
                 .environmentObject(auth)
                 .environmentObject(filter)
-                .task {
-                    await auth.fetchProfile()
-                }
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
