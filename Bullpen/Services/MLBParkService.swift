@@ -275,6 +275,8 @@ actor MLBParkService {
 
     func fetchPosts(boardId: String, page: Int = 1) async throws -> [Post] {
         let html = try await fetch("\(base)/mp/b.php?b=\(boardId)&p=\(listOffset(for: page))")
+        // 첫 페이지 응답에서 로그인 상태 파싱 → fetchProfile() 별도 요청 불필요
+        if page == 1 { Task { @MainActor in AuthService.shared.updateLoginState(from: html) } }
         return try parsePostList(html: html, boardId: boardId)
     }
 

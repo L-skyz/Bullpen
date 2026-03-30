@@ -12,6 +12,7 @@ class AuthService: ObservableObject {
     private let base = "https://mlbpark.donga.com"
     private let session: URLSession
     private var isReloginInProgress = false
+    private var lastValidatedDate: Date? = nil
 
     private init() {
         let config = URLSessionConfiguration.default
@@ -105,7 +106,27 @@ class AuthService: ObservableObject {
 
     // MARK: - 로그인 상태 + 닉네임 확인 (HTML 기준)
 
+    /// fetchPosts() 응답 HTML에서 로그인 상태 파싱 — 별도 네트워크 요청 없음
+    func updateLoginState(from html: String) {
+        if html.contains("로그아웃") {
+            isLoggedIn = true
+            if let start = html.range(of: "로그아웃 ("),
+               let end   = html[start.upperBound...].range(of: ")") {
+                let name = String(html[start.upperBound..<end.lowerBound])
+                if !name.isEmpty { nickname = name }
+            }
+            updateAvatarUrl()
+            persistProfile()
+            lastValidatedDate = Date()
+        } else {
+            // 세션 만료 — 재로그인 시도 (fetchProfile의 기존 로직 재사용)
+            Task { await fetchProfile() }
+        }
+    }
+
     func fetchProfile() async {
+        // fetchPosts()가 이미 검증했으면 중복 요청 생략
+        if let last = lastValidatedDate, Date().timeIntervalSince(last) < 10 { return }
         do {
             let html = try await MLBParkService.shared.fetchHTML("\(base)/mp/b.php?b=bullpen")
             if html.contains("로그아웃") {
@@ -117,6 +138,7 @@ class AuthService: ObservableObject {
                 }
                 updateAvatarUrl()
                 persistProfile()
+                lastValidatedDate = Date()
             } else {
                 // 세션 만료 — Keychain 자격증명으로 자동 재로그인 시도
                 if !isReloginInProgress, let (id, pw) = loadCredentials() {
