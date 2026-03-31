@@ -61,7 +61,12 @@ class PostDetailViewModel: ObservableObject {
         isSubmittingComment = true
         do {
             let parentPrid = replyingTo?.replyPrid ?? ""
-            let parentSeq  = replyingTo?.seq ?? ""
+            let parentSeq: String
+            if let replyingTo, replyingTo.depth >= 2 {
+                parentSeq = replyingTo.replySource
+            } else {
+                parentSeq = replyingTo?.seq ?? ""
+            }
             try await MLBParkService.shared.writeComment(
                 boardId: boardId, postId: postId, content: trimmed,
                 parentPrid: parentPrid, parentSeq: parentSeq

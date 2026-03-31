@@ -490,21 +490,17 @@ actor MLBParkService {
             let isReplied   = rowCls.contains("replied")    || bodyCls.contains("replied")
             let isNested    = isReplied
 
-            // 대댓글 prid: btn_replied의 viewReply(cls, prid, toSource) 중 첫 번째 숫자
-            // 최상위 댓글: prid == seq, 대댓글: prid == root seq
-            var replyPrid = seq
-            if let btn = try? row.select("a.btn_replied").first(),
-               let onclick = try? btn.attr("onclick"),
-               let range1 = onclick.range(of: #""(\d+)""#, options: .regularExpression) {
-                let inner = onclick[range1]
-                let digits = inner.filter { $0.isNumber }
-                if !digits.isEmpty { replyPrid = String(digits) }
-            }
+            // 웹은 viewReply(idClass, prid, source)로 댓글 팝업을 연다.
+            // 답댓글 등록은 이 prid/source 조합을 그대로 action.php에 넘겨야 한다.
+            let replyTargets = extractReplyTargets(from: row, fallbackSeq: seq)
+            let replyPrid = replyTargets.prid
+            let replySource = replyTargets.source
 
             let isRepliedRe = rowCls.contains("replied_re") || bodyCls.contains("replied_re")
             let depth = isRepliedRe ? 2 : (isNested ? 1 : 0)
             let c = Comment(
-                id: "\(postId)_c\(i)", seq: seq, replyPrid: replyPrid,
+                id: "\(postId)_c\(i)", seq: seq,
+                replyPrid: replyPrid, replySource: replySource,
                 author: nick, avatarUrl: avatar,
                 date: cDate, ip: ip, content: text, isOwn: isOwn,
                 replyToAuthor: replyToAuthor, depth: depth
@@ -1002,6 +998,45 @@ actor MLBParkService {
               let item = components.queryItems?.first(where: { $0.name == key })
         else { return nil }
         return item.value
+    }
+
+    /// 댓글 row의 viewReply(prid, source) 값을 파싱한다.
+    private func extractReplyTargets(from row: Element, fallbackSeq: String) -> (prid: String, source: String) {
+        let selectors = ["a.btn_replied", ".txt_box .txt > a"]
+
+        for selector in selectors {
+            guard let target = try? row.select(selector).first(),
+                  let onclick = try? target.attr("onclick"),
+                  let parsed = parseViewReplyTargets(onclick)
+            else { continue }
+
+            let prid = parsed.prid.isEmpty ? fallbackSeq : parsed.prid
+            let source = parsed.source.isEmpty ? fallbackSeq : parsed.source
+            return (prid, source)
+        }
+
+        return (fallbackSeq, fallbackSeq)
+    }
+
+    /// onclick='return viewReply("reply_x", "123", "456")' 형태에서 prid/source를 회수한다.
+    private func parseViewReplyTargets(_ onclick: String) -> (prid: String, source: String)? {
+        let pattern = #"viewReply\("[^"]*",\s*"([^"]*)",\s*"([^"]*)"\)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+
+        let nsOnclick = onclick as NSString
+        let fullRange = NSRange(location: 0, length: nsOnclick.length)
+        guard let match = regex.firstMatch(in: onclick, options: [], range: fullRange),
+              match.numberOfRanges >= 3
+        else { return nil }
+
+        let pridRange = match.range(at: 1)
+        let sourceRange = match.range(at: 2)
+        guard pridRange.location != NSNotFound, sourceRange.location != NSNotFound else { return nil }
+
+        return (
+            nsOnclick.substring(with: pridRange),
+            nsOnclick.substring(with: sourceRange)
+        )
     }
 
     /// 폼 파라미터를 CP949로 인코딩한 Data 반환 (한글 깨짐 방지)
