@@ -292,7 +292,11 @@ struct PostDetailView: View {
                                     },
                                     onDeleteReply: { reply in
                                         deletingComment = reply
-                                    }
+                                    },
+                                    onReplyToReply: auth.isLoggedIn ? { reply in
+                                        vm.replyingTo = reply
+                                        commentFocused = true
+                                    } : nil
                                 )
                                 Divider().padding(.leading, 64)
                             }
@@ -341,14 +345,14 @@ struct PostDetailView: View {
                                         if vm.isSubmittingComment {
                                             ProgressView()
                                                 .frame(width: 72, height: 36)
-                                                .background(Color.purple.opacity(0.15))
+                                                .background(Color.blue.opacity(0.15))
                                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                                         } else {
                                             Text("등록")
                                                 .font(.subheadline).fontWeight(.semibold)
-                                                .foregroundColor(.purple)
+                                                .foregroundColor(.blue)
                                                 .frame(width: 72, height: 36)
-                                                .background(Color.purple.opacity(0.15))
+                                                .background(Color.blue.opacity(0.15))
                                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                                         }
                                     }
@@ -741,6 +745,7 @@ struct CommentRowView: View {
     var onReply: (() -> Void)? = nil
     var onEditReply: ((Comment) -> Void)? = nil
     var onDeleteReply: ((Comment) -> Void)? = nil
+    var onReplyToReply: ((Comment) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -809,13 +814,21 @@ struct CommentRowView: View {
                         Color.clear.frame(width: 20)
                     }
                     Image(systemName: "arrow.turn.down.right")
-                        .font(.caption).foregroundColor(.purple.opacity(0.6))
+                        .font(.caption).foregroundColor(.blue.opacity(0.6))
                         .frame(width: 36).padding(.top, 2)
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
                             Text(reply.author).font(.footnote).fontWeight(.semibold).foregroundColor(.primary)
                             Spacer()
                             Text(reply.date).font(.caption2).foregroundColor(.secondary)
+                            if let onReplyToReply {
+                                Button { onReplyToReply(reply) } label: {
+                                    Image(systemName: "arrow.turn.down.left")
+                                        .font(.caption)
+                                        .foregroundColor(.orange.opacity(0.8))
+                                        .padding(4)
+                                }
+                            }
                             if reply.isOwn {
                                 Menu {
                                     if let onEditReply {
@@ -841,7 +854,7 @@ struct CommentRowView: View {
                     }
                 }
                 .padding(.horizontal).padding(.vertical, 8)
-                .background(isPostAuthor ? Color.orange.opacity(0.12) : Color.purple.opacity(0.07))
+                .background(isPostAuthor ? Color.orange.opacity(0.12) : Color.blue.opacity(0.07))
             }
         }
     }
