@@ -670,6 +670,7 @@ struct HTMLContentView: UIViewRepresentable {
         // YouTube가 WKWebView를 차단하지 않도록 Mobile Safari UA로 위장
         wv.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
         wv.navigationDelegate = context.coordinator
+        wv.uiDelegate = context.coordinator
         wv.isOpaque = false
         wv.backgroundColor = .clear
         wv.scrollView.isScrollEnabled = false
@@ -713,10 +714,16 @@ struct HTMLContentView: UIViewRepresentable {
         wv.loadHTMLString(styled, baseURL: URL(string: "https://mlbpark.donga.com"))
     }
 
-    class Coordinator: NSObject, WKNavigationDelegate {
+    class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         let parent: HTMLContentView
         var lastHTML: String = ""
         init(_ p: HTMLContentView) { parent = p }
+
+        private func openExternal(_ url: URL) {
+            DispatchQueue.main.async {
+                UIApplication.shared.open(url)
+            }
+        }
 
         func webView(_ wv: WKWebView, didFinish _: WKNavigation!) {
             wv.evaluateJavaScript("document.body.scrollHeight") { result, _ in
@@ -728,14 +735,31 @@ struct HTMLContentView: UIViewRepresentable {
 
         func webView(_ wv: WKWebView, decidePolicyFor action: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            guard action.navigationType == .linkActivated,
-                  let url = action.request.url else {
+            guard let url = action.request.url else {
                 decisionHandler(.allow)
                 return
             }
 
-            UIApplication.shared.open(url)
+            let shouldOpenExternally =
+                action.navigationType == .linkActivated || action.targetFrame == nil
+
+            guard shouldOpenExternally else {
+                decisionHandler(.allow)
+                return
+            }
+
+            openExternal(url)
             decisionHandler(.cancel)
+        }
+
+        func webView(_ webView: WKWebView,
+                     createWebViewWith configuration: WKWebViewConfiguration,
+                     for navigationAction: WKNavigationAction,
+                     windowFeatures: WKWindowFeatures) -> WKWebView? {
+            if let url = navigationAction.request.url {
+                openExternal(url)
+            }
+            return nil
         }
     }
 }
