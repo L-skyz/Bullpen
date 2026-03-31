@@ -5,6 +5,15 @@ import Security
 class AuthService: ObservableObject {
     static let shared = AuthService()
 
+    private static let persistedCookiesKey = "persistedCookies"
+    private static let persistedProfileKey = "persistedProfile"
+    private static let likelyAuthCookieNames: Set<String> = [
+        "mlbuser",
+        "mpuser"
+    ]
+    private static let keychainService = "com.bullpen.auth"
+    private static let keychainAccount = "login_credentials"
+
     @Published var isLoggedIn = false
     @Published var nickname: String = ""
     @Published var avatarUrl: String = ""
@@ -21,14 +30,18 @@ class AuthService: ObservableObject {
         config.httpCookieAcceptPolicy = .always
         session = URLSession(configuration: config)
         restorePersistedCookies()
-        // 저장된 프로필이 있으면 즉시 복원 (네트워크 대기 없이 UI 표시)
-        if let saved = UserDefaults.standard.dictionary(forKey: "persistedProfile") as? [String: String],
+        purgeInvalidCookies()
+        persistCookies()
+
+        if hasRestorableLoginCookies(),
+           let saved = UserDefaults.standard.dictionary(forKey: Self.persistedProfileKey) as? [String: String],
            let name = saved["nickname"], !name.isEmpty {
             isLoggedIn = true
-            nickname   = name
-            avatarUrl  = saved["avatarUrl"] ?? ""
+            nickname = name
+            avatarUrl = saved["avatarUrl"] ?? ""
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.persistedProfileKey)
         }
-        // 실제 검증은 BullpenApp.task에서 fetchProfile()로 수행
     }
 
     // MARK: - 로그인
@@ -38,14 +51,12 @@ class AuthService: ObservableObject {
         let loginActionURL = "https://secure.donga.com/mlbpark/trans_exe.php"
         let ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
 
-        // Step 1: GET 로그인 페이지 → 세션 쿠키 수신
         if let getURL = URL(string: loginPageURL) {
             var getReq = URLRequest(url: getURL)
             getReq.setValue(ua, forHTTPHeaderField: "User-Agent")
             _ = try? await session.data(for: getReq)
         }
 
-        // Step 2: POST to trans_exe.php
         guard let postURL = URL(string: loginActionURL) else { return }
         var req = URLRequest(url: postURL)
         req.httpMethod = "POST"
@@ -54,11 +65,11 @@ class AuthService: ObservableObject {
         req.setValue(loginPageURL, forHTTPHeaderField: "Referer")
 
         let params: [String: String] = [
-            "bid":          id,
-            "bpw":          password,
-            "gourl":        "https://mlbpark.donga.com/mp",
-            "mlbuser":      "1",
-            "errorChk":     "",
+            "bid": id,
+            "bpw": password,
+            "gourl": "https://mlbpark.donga.com/mp",
+            "mlbuser": "1",
+            "errorChk": "",
             "idsave_value": ""
         ]
         req.httpBody = params
@@ -72,7 +83,6 @@ class AuthService: ObservableObject {
             throw MLBParkError.networkError("로그인 실패 (\(http.statusCode))")
         }
 
-        // Step 3: 성공/실패 판단 (실패 시 secure.donga.com에 머뭄)
         let finalHost = (resp as? HTTPURLResponse)?.url?.host ?? ""
         if finalHost.contains("secure.donga.com") || finalHost.isEmpty {
             let html = MLBParkService.decodeServerText(data, response: resp) ?? ""
@@ -83,7 +93,6 @@ class AuthService: ObservableObject {
             throw MLBParkError.networkError("로그인에 실패했습니다. 다시 시도해주세요.")
         }
 
-        // Step 4: 성공 — 자격증명·쿠키 저장 후 프로필 확인
         saveCredentials(id: id, password: password)
         persistCookies()
         await fetchProfile()
@@ -93,79 +102,57 @@ class AuthService: ObservableObject {
     // MARK: - 로그아웃
 
     func logout() {
-        isLoggedIn = false
-        nickname = ""
-        avatarUrl = ""
-        clearCredentials()
-        UserDefaults.standard.removeObject(forKey: "persistedCookies")
-        UserDefaults.standard.removeObject(forKey: "persistedProfile")
-        HTTPCookieStorage.shared.cookies?
-            .filter { $0.domain.contains("donga.com") }
-            .forEach { HTTPCookieStorage.shared.deleteCookie($0) }
+        clearLoginState(deleteCookies: true, clearCredentials: true)
     }
 
-    // MARK: - 로그인 상태 + 닉네임 확인 (HTML 기준)
+    // MARK: - 로그인 상태 + 닉네임 확인
 
-    /// fetchPosts() 응답 HTML에서 로그인 상태 파싱 — 별도 네트워크 요청 없음
     func updateLoginState(from html: String) {
         if html.contains("로그아웃") {
             isLoggedIn = true
             if let start = html.range(of: "로그아웃 ("),
-               let end   = html[start.upperBound...].range(of: ")") {
-                let name = String(html[start.upperBound..<end.lowerBound])
-                if !name.isEmpty { nickname = name }
+               let end = html[start.upperBound...].range(of: ")") {
+                let extracted = String(html[start.upperBound..<end.lowerBound])
+                if !extracted.isEmpty { nickname = extracted }
             }
             updateAvatarUrl()
+            persistCookies()
             persistProfile()
             lastValidatedDate = Date()
         } else {
-            // 세션 만료 — 재로그인 시도 (fetchProfile의 기존 로직 재사용)
             Task { await fetchProfile() }
         }
     }
 
     func fetchProfile() async {
-        // fetchPosts()가 이미 검증했으면 중복 요청 생략
         if let last = lastValidatedDate, Date().timeIntervalSince(last) < 10 { return }
+
         do {
             let html = try await MLBParkService.shared.fetchHTML("\(base)/mp/b.php?b=bullpen")
             if html.contains("로그아웃") {
                 isLoggedIn = true
                 if let start = html.range(of: "로그아웃 ("),
-                   let end   = html[start.upperBound...].range(of: ")") {
+                   let end = html[start.upperBound...].range(of: ")") {
                     let extracted = String(html[start.upperBound..<end.lowerBound])
                     if !extracted.isEmpty { nickname = extracted }
                 }
                 updateAvatarUrl()
+                persistCookies()
                 persistProfile()
                 lastValidatedDate = Date()
-            } else {
-                // 세션 만료 — Keychain 자격증명으로 자동 재로그인 시도
-                if !isReloginInProgress, let (id, pw) = loadCredentials() {
-                    isReloginInProgress = true
-                    defer { isReloginInProgress = false }
-                    // 만료된 쿠키 정리 후 재로그인
-                    HTTPCookieStorage.shared.cookies?
-                        .filter { $0.domain.contains("donga.com") }
-                        .forEach { HTTPCookieStorage.shared.deleteCookie($0) }
-                    UserDefaults.standard.removeObject(forKey: "persistedCookies")
-                    do {
-                        try await login(id: id, password: pw)
-                        // login()이 내부적으로 fetchProfile()까지 완료함
-                    } catch {
-                        // 재로그인 실패 (비번 변경 등) → 자격증명 폐기, 로그아웃 처리
-                        clearCredentials()
-                        isLoggedIn = false
-                        nickname   = ""
-                        avatarUrl  = ""
-                        UserDefaults.standard.removeObject(forKey: "persistedProfile")
-                    }
-                } else {
-                    isLoggedIn = false
-                    nickname   = ""
-                    avatarUrl  = ""
-                    UserDefaults.standard.removeObject(forKey: "persistedProfile")
+            } else if !isReloginInProgress, let (id, pw) = loadCredentials() {
+                isReloginInProgress = true
+                defer { isReloginInProgress = false }
+                deleteLoginCookies()
+                UserDefaults.standard.removeObject(forKey: Self.persistedCookiesKey)
+
+                do {
+                    try await login(id: id, password: pw)
+                } catch {
+                    clearLoginState(deleteCookies: true, clearCredentials: true)
                 }
+            } else {
+                clearLoginState(deleteCookies: true)
             }
         } catch {
             // 네트워크 오류 시 기존 상태 유지
@@ -175,8 +162,6 @@ class AuthService: ObservableObject {
     // MARK: - 아바타 URL 구성
 
     private func updateAvatarUrl() {
-        // mpuser 쿠키 → uid 각 문자를 디렉토리로 분리 + @ 패딩으로 총 12개
-        // 예: uid="sm12011"(7자) → s/m/1/2/0/1/1/@/@/@/@/@/sm12011@@@@@@d.png
         guard let uid = HTTPCookieStorage.shared.cookies?.first(where: {
             $0.domain.contains("donga.com") && $0.name == "mpuser" && !$0.value.isEmpty
         })?.value else { return }
@@ -188,29 +173,26 @@ class AuthService: ObservableObject {
         avatarUrl = "https://dimg.donga.com/ugc/WWW/Profile/\(dirPart)/\(uid)\(atPadding)d.png"
     }
 
-    // MARK: - 프로필 영속화 (빠른 복원용)
+    // MARK: - 프로필 영속화
 
     private func persistProfile() {
         guard isLoggedIn, !nickname.isEmpty else { return }
         UserDefaults.standard.set(
             ["nickname": nickname, "avatarUrl": avatarUrl],
-            forKey: "persistedProfile"
+            forKey: Self.persistedProfileKey
         )
     }
 
-    // MARK: - Keychain 자격증명 (자동 재로그인용)
-
-    private static let keychainService = "com.bullpen.auth"
-    private static let keychainAccount = "login_credentials"
+    // MARK: - Keychain 자격증명
 
     private func saveCredentials(id: String, password: String) {
         guard let data = try? JSONSerialization.data(withJSONObject: ["id": id, "pw": password]) else { return }
         let query: [CFString: Any] = [
-            kSecClass:           kSecClassGenericPassword,
-            kSecAttrService:     Self.keychainService,
-            kSecAttrAccount:     Self.keychainAccount,
-            kSecValueData:       data,
-            kSecAttrAccessible:  kSecAttrAccessibleWhenUnlocked
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: Self.keychainService,
+            kSecAttrAccount: Self.keychainAccount,
+            kSecValueData: data,
+            kSecAttrAccessible: kSecAttrAccessibleWhenUnlocked
         ]
         SecItemDelete(query as CFDictionary)
         SecItemAdd(query as CFDictionary, nil)
@@ -218,66 +200,142 @@ class AuthService: ObservableObject {
 
     private func loadCredentials() -> (id: String, password: String)? {
         let query: [CFString: Any] = [
-            kSecClass:        kSecClassGenericPassword,
-            kSecAttrService:  Self.keychainService,
-            kSecAttrAccount:  Self.keychainAccount,
-            kSecReturnData:   true,
-            kSecMatchLimit:   kSecMatchLimitOne
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: Self.keychainService,
+            kSecAttrAccount: Self.keychainAccount,
+            kSecReturnData: true,
+            kSecMatchLimit: kSecMatchLimitOne
         ]
         var result: AnyObject?
         guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
               let data = result as? Data,
               let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String],
-              let id = dict["id"], let pw = dict["pw"] else { return nil }
+              let id = dict["id"],
+              let pw = dict["pw"] else { return nil }
         return (id, pw)
     }
 
     private func clearCredentials() {
         let query: [CFString: Any] = [
-            kSecClass:       kSecClassGenericPassword,
+            kSecClass: kSecClassGenericPassword,
             kSecAttrService: Self.keychainService,
             kSecAttrAccount: Self.keychainAccount
         ]
         SecItemDelete(query as CFDictionary)
     }
 
-    // MARK: - 쿠키 영속화 (세션 유지용)
+    // MARK: - 쿠키 영속화
 
     private func persistCookies() {
         let saved: [[String: String]] = (HTTPCookieStorage.shared.cookies ?? [])
-            .filter { $0.domain.contains("donga.com") && !$0.value.isEmpty && $0.value != "deleted" }
-            .compactMap { c in
-                if let exp = c.expiresDate, exp <= Date() { return nil }
-                var d: [String: String] = ["name": c.name, "value": c.value,
-                                           "domain": c.domain, "path": c.path]
-                if c.isSecure { d["secure"] = "1" }
-                if let exp = c.expiresDate { d["expires"] = String(exp.timeIntervalSince1970) }
-                return d
+            .filter { shouldPersistCookie($0) }
+            .compactMap { cookie in
+                var item: [String: String] = [
+                    "name": cookie.name,
+                    "value": cookie.value,
+                    "domain": cookie.domain,
+                    "path": cookie.path
+                ]
+                if cookie.isSecure { item["secure"] = "1" }
+                if let expiry = cookie.expiresDate {
+                    item["expires"] = String(expiry.timeIntervalSince1970)
+                }
+                return item
             }
+
         if saved.isEmpty {
-            UserDefaults.standard.removeObject(forKey: "persistedCookies")
+            UserDefaults.standard.removeObject(forKey: Self.persistedCookiesKey)
         } else {
-            UserDefaults.standard.set(saved, forKey: "persistedCookies")
+            UserDefaults.standard.set(saved, forKey: Self.persistedCookiesKey)
         }
     }
 
     private func restorePersistedCookies() {
-        guard let saved = UserDefaults.standard.array(forKey: "persistedCookies")
-                as? [[String: String]] else { return }
+        guard let saved = UserDefaults.standard.array(forKey: Self.persistedCookiesKey) as? [[String: String]] else { return }
+
         for dict in saved {
-            guard let name = dict["name"], let value = dict["value"],
-                  let domain = dict["domain"] else { continue }
-            if let exp = dict["expires"], let ts = TimeInterval(exp), Date(timeIntervalSince1970: ts) <= Date() { continue }
+            guard let name = dict["name"],
+                  let value = dict["value"],
+                  let domain = dict["domain"],
+                  let exp = dict["expires"],
+                  let ts = TimeInterval(exp) else { continue }
+
+            let expiry = Date(timeIntervalSince1970: ts)
+            guard expiry > Date() else { continue }
+
             var props: [HTTPCookiePropertyKey: Any] = [
-                .name: name, .value: value, .domain: domain, .path: dict["path"] ?? "/"
+                .name: name,
+                .value: value,
+                .domain: domain,
+                .path: dict["path"] ?? "/",
+                .expires: expiry
             ]
             if dict["secure"] == "1" { props[.secure] = "TRUE" }
-            if let exp = dict["expires"], let ts = TimeInterval(exp) {
-                props[.expires] = Date(timeIntervalSince1970: ts)
-            }
+
             if let cookie = HTTPCookie(properties: props) {
                 HTTPCookieStorage.shared.setCookie(cookie)
             }
         }
+    }
+
+    private func shouldPersistCookie(_ cookie: HTTPCookie) -> Bool {
+        guard cookie.domain.contains("donga.com"),
+              !cookie.value.isEmpty,
+              cookie.value != "deleted",
+              let expiry = cookie.expiresDate,
+              expiry > Date() else {
+            return false
+        }
+        return true
+    }
+
+    private func purgeInvalidCookies() {
+        let stale = (HTTPCookieStorage.shared.cookies ?? []).filter { cookie in
+            guard cookie.domain.contains("donga.com") else { return false }
+            if cookie.value.isEmpty || cookie.value == "deleted" { return true }
+            if let expiry = cookie.expiresDate {
+                return expiry <= Date()
+            }
+            return false
+        }
+
+        stale.forEach { HTTPCookieStorage.shared.deleteCookie($0) }
+    }
+
+    private func hasRestorableLoginCookies() -> Bool {
+        (HTTPCookieStorage.shared.cookies ?? []).contains { cookie in
+            guard cookie.domain.contains("donga.com"),
+                  Self.likelyAuthCookieNames.contains(cookie.name),
+                  !cookie.value.isEmpty,
+                  cookie.value != "deleted" else {
+                return false
+            }
+
+            if let expiry = cookie.expiresDate {
+                return expiry > Date()
+            }
+            return true
+        }
+    }
+
+    private func clearLoginState(deleteCookies: Bool, clearCredentials: Bool = false) {
+        isLoggedIn = false
+        nickname = ""
+        avatarUrl = ""
+        lastValidatedDate = nil
+        UserDefaults.standard.removeObject(forKey: Self.persistedCookiesKey)
+        UserDefaults.standard.removeObject(forKey: Self.persistedProfileKey)
+        if clearCredentials { self.clearCredentials() }
+        if deleteCookies { deleteLoginCookies() }
+    }
+
+    private func deleteLoginCookies() {
+        HTTPCookieStorage.shared.cookies?
+            .filter { shouldDeleteCookie($0) }
+            .forEach { HTTPCookieStorage.shared.deleteCookie($0) }
+    }
+
+    private func shouldDeleteCookie(_ cookie: HTTPCookie) -> Bool {
+        cookie.domain.contains("donga.com") && cookie.name != "GsCK_AC"
     }
 }
