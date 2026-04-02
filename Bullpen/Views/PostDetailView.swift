@@ -43,6 +43,8 @@ class PostDetailViewModel: ObservableObject {
             guard generation == loadGeneration else { return }
             lastHTMLHash = hash
             self.detail = detail
+            hasNewComments = false
+            pendingDetail = nil
         } catch is CancellationError {
         } catch let e as URLError where e.code == .cancelled {
         } catch {
@@ -51,16 +53,28 @@ class PostDetailViewModel: ObservableObject {
         }
     }
 
-    /// 폴링용 - 로딩 인디케이터 없이 조용히 갱신, 변경 없으면 스킵
-    func silentRefresh(boardId: String, postId: String) async {
+    @Published var hasNewComments = false
+    private var pendingDetail: PostDetail?
+
+    /// 폴링용 - 변경 감지만, 자동 적용 안 함
+    func silentCheck(boardId: String, postId: String) async {
         guard !isLoading else { return }
         do {
             guard let (detail, hash) = try await MLBParkService.shared.fetchPostDetailIfChanged(
                 boardId: boardId, postId: postId, knownHash: lastHTMLHash
             ) else { return }
             lastHTMLHash = hash
-            self.detail = detail
+            pendingDetail = detail
+            hasNewComments = true
         } catch {}
+    }
+
+    /// 배너 탭 시 보류 중인 댓글 적용
+    func applyNewComments() {
+        guard let pending = pendingDetail else { return }
+        detail = pending
+        pendingDetail = nil
+        hasNewComments = false
     }
 
     func submitComment(boardId: String, postId: String) async {
@@ -292,6 +306,25 @@ struct PostDetailView: View {
                             }
                             .padding(.horizontal).padding(.top, 12).padding(.bottom, 4)
 
+                            if vm.hasNewComments {
+                                Button {
+                                    vm.applyNewComments()
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "arrow.up.circle.fill")
+                                        Text("새 댓글이 있습니다")
+                                            .fontWeight(.semibold)
+                                    }
+                                    .font(.subheadline)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 16).padding(.vertical, 8)
+                                    .background(Color.orange)
+                                    .clipShape(Capsule())
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 6)
+                            }
+
                             ForEach(d.comments) { c in
                                 CommentRowView(
                                     comment: c,
@@ -413,7 +446,7 @@ struct PostDetailView: View {
                 let interval = Double.random(in: 25...30)
                 try? await Task.sleep(for: .seconds(interval))
                 guard !Task.isCancelled else { break }
-                await vm.silentRefresh(boardId: boardId, postId: postId)
+                await vm.silentCheck(boardId: boardId, postId: postId)
             }
         }
         // 게시글 삭제 확인
