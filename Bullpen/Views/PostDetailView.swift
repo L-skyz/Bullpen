@@ -15,6 +15,7 @@ class PostDetailViewModel: ObservableObject {
     @Published var actionError: String?
     @Published var replyingTo: Comment? = nil
     private var loadGeneration = 0
+    private var lastHTMLHash: Int?
 
     func load(boardId: String, postId: String) async {
         loadGeneration += 1
@@ -36,8 +37,11 @@ class PostDetailViewModel: ObservableObject {
         }
 
         do {
-            let detail = try await MLBParkService.shared.fetchPostDetail(boardId: boardId, postId: postId)
+            guard let (detail, hash) = try await MLBParkService.shared.fetchPostDetailIfChanged(
+                boardId: boardId, postId: postId, knownHash: nil
+            ) else { return }
             guard generation == loadGeneration else { return }
+            lastHTMLHash = hash
             self.detail = detail
         } catch is CancellationError {
         } catch let e as URLError where e.code == .cancelled {
@@ -45,6 +49,18 @@ class PostDetailViewModel: ObservableObject {
             guard generation == loadGeneration else { return }
             self.error = error.localizedDescription
         }
+    }
+
+    /// 폴링용 - 로딩 인디케이터 없이 조용히 갱신, 변경 없으면 스킵
+    func silentRefresh(boardId: String, postId: String) async {
+        guard !isLoading else { return }
+        do {
+            guard let (detail, hash) = try await MLBParkService.shared.fetchPostDetailIfChanged(
+                boardId: boardId, postId: postId, knownHash: lastHTMLHash
+            ) else { return }
+            lastHTMLHash = hash
+            self.detail = detail
+        } catch {}
     }
 
     func submitComment(boardId: String, postId: String) async {
@@ -144,6 +160,7 @@ struct PostDetailView: View {
     @StateObject private var vm = PostDetailViewModel()
     @EnvironmentObject var auth: AuthService
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @State private var contentHeight: CGFloat = 200
     @FocusState private var commentFocused: Bool
 
@@ -388,8 +405,16 @@ struct PostDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .background(SwipeBackEnabler())
-        .task {
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
             await vm.load(boardId: boardId, postId: postId)
+            // 랜덤 간격 폴링 (12~22초) → 봇 판정 회피
+            while !Task.isCancelled {
+                let interval = Double.random(in: 12...22)
+                try? await Task.sleep(for: .seconds(interval))
+                guard !Task.isCancelled else { break }
+                await vm.silentRefresh(boardId: boardId, postId: postId)
+            }
         }
         // 게시글 삭제 확인
         .confirmationDialog("게시글을 삭제하시겠습니까?",
