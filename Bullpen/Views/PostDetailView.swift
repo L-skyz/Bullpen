@@ -440,8 +440,11 @@ struct PostDetailView: View {
         .background(SwipeBackEnabler())
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
-            await vm.load(boardId: boardId, postId: postId)
-            // 랜덤 간격 폴링 (12~22초) → 봇 판정 회피
+            // 최초 진입만 전체 로드, 포그라운드 복귀 시엔 폴링만 재개
+            if vm.detail == nil {
+                await vm.load(boardId: boardId, postId: postId)
+            }
+            // 25~30초 지터 폴링 — 뷰 이탈/백그라운드 시 Task 자동 취소
             while !Task.isCancelled {
                 let interval = Double.random(in: 25...30)
                 try? await Task.sleep(for: .seconds(interval))
