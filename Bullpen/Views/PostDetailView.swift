@@ -15,6 +15,7 @@ class PostDetailViewModel: ObservableObject {
     @Published var actionError: String?
     @Published var replyingTo: Comment? = nil
     private var loadGeneration = 0
+    @Published var hasNewComments = false
 
     func load(boardId: String, postId: String) async {
         loadGeneration += 1
@@ -39,6 +40,7 @@ class PostDetailViewModel: ObservableObject {
             let detail = try await MLBParkService.shared.fetchPostDetail(boardId: boardId, postId: postId)
             guard generation == loadGeneration else { return }
             self.detail = detail
+            hasNewComments = false
         } catch is CancellationError {
         } catch let e as URLError where e.code == .cancelled {
         } catch {
@@ -78,6 +80,19 @@ class PostDetailViewModel: ObservableObject {
             actionError = error.localizedDescription
         }
         isSubmittingComment = false
+    }
+
+    /// 폴링용 사일런트 로드 — 로딩 인디케이터 없이 댓글 수 비교 후 배너 표시
+    func silentLoad(boardId: String, postId: String) async {
+        guard !isLoading else { return }
+        do {
+            let newDetail = try await MLBParkService.shared.fetchPostDetail(boardId: boardId, postId: postId)
+            let oldCount = detail?.commentCount ?? 0
+            detail = newDetail
+            if newDetail.commentCount > oldCount {
+                hasNewComments = true
+            }
+        } catch {}
     }
 
     func deletePost(boardId: String, postId: String) async -> Bool {
@@ -276,6 +291,25 @@ struct PostDetailView: View {
                             }
                             .padding(.horizontal).padding(.top, 12).padding(.bottom, 4)
 
+                            if vm.hasNewComments {
+                                Button {
+                                    Task { await vm.load(boardId: boardId, postId: postId) }
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "arrow.up.circle.fill")
+                                        Text("새 댓글이 있습니다")
+                                            .fontWeight(.semibold)
+                                    }
+                                    .font(.subheadline)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 16).padding(.vertical, 8)
+                                    .background(Color.orange)
+                                    .clipShape(Capsule())
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 6)
+                            }
+
                             ForEach(d.comments) { c in
                                 CommentRowView(
                                     comment: c,
@@ -398,7 +432,7 @@ struct PostDetailView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(Double.random(in: 25...30)))
                 guard !Task.isCancelled else { break }
-                await vm.load(boardId: boardId, postId: postId)
+                await vm.silentLoad(boardId: boardId, postId: postId)
             }
         }
         // 게시글 삭제 확인
