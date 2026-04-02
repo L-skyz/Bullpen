@@ -410,7 +410,7 @@ struct PostDetailView: View {
             await vm.load(boardId: boardId, postId: postId)
             // 랜덤 간격 폴링 (12~22초) → 봇 판정 회피
             while !Task.isCancelled {
-                let interval = Double.random(in: 12...22)
+                let interval = Double.random(in: 25...30)
                 try? await Task.sleep(for: .seconds(interval))
                 guard !Task.isCancelled else { break }
                 await vm.silentRefresh(boardId: boardId, postId: postId)
