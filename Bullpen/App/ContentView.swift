@@ -62,6 +62,7 @@ struct ContentView: View {
     @State private var selectedBoard: Board = Board.all.first(where: { $0.id == "bullpen" }) ?? Board.all[0]
     @State private var showDrawer = false
     @State private var navPath = NavigationPath()
+    @State private var boardReloadTrigger = 0
 
     var body: some View {
         NavigationStack(path: $navPath) {
@@ -69,7 +70,7 @@ struct ContentView: View {
                 Group {
                     switch section {
                     case .board:
-                        PostListView(board: $selectedBoard)
+                        PostListView(board: $selectedBoard, reloadTrigger: boardReloadTrigger)
                     case .best:
                         BestPostsView()
                     case .write:
@@ -80,7 +81,7 @@ struct ContentView: View {
                 }
 
                 if showDrawer {
-                    AppDrawer(selectedBoard: $selectedBoard, section: $section, isShowing: $showDrawer)
+                    AppDrawer(selectedBoard: $selectedBoard, section: $section, isShowing: $showDrawer, onSameBoardTap: { boardReloadTrigger += 1 })
                         .transition(.move(edge: .leading))
                 }
             }
@@ -118,6 +119,7 @@ struct AppDrawer: View {
     @Binding var selectedBoard: Board
     @Binding var section: AppSection
     @Binding var isShowing: Bool
+    var onSameBoardTap: () -> Void = {}
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -146,6 +148,9 @@ struct AppDrawer: View {
                     Section("게시판") {
                         ForEach(Board.all) { board in
                             Button {
+                                if section == .board && board.id == selectedBoard.id {
+                                    onSameBoardTap()
+                                }
                                 withAnimation(drawerSpring) {
                                     selectedBoard = board
                                     section = .board

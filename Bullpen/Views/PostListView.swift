@@ -74,6 +74,7 @@ class PostListViewModel: ObservableObject {
 
 struct PostListView: View {
     @Binding var board: Board
+    var reloadTrigger: Int = 0
     @EnvironmentObject var auth: AuthService
     @EnvironmentObject var filter: BlockFilter
     @StateObject private var vm = PostListViewModel()
@@ -209,6 +210,11 @@ struct PostListView: View {
         .onChange(of: scenePhase) { _, newPhase in
             guard board.id == "kbotown" else { return }
             if newPhase == .active { kboVM.start() } else { kboVM.stop() }
+        }
+        .onChange(of: reloadTrigger) { _, _ in
+            selectedMaemuri = "전체"
+            scrollToTopTrigger += 1
+            Task { await vm.load(boardId: board.id, reset: true) }
         }
     }
 
