@@ -415,13 +415,6 @@ actor MLBParkService {
         return try parsePostDetail(html: html, boardId: boardId, postId: postId)
     }
 
-    /// 해시가 동일하면 nil 반환 → 변경 있을 때만 파싱
-    func fetchPostDetailIfChanged(boardId: String, postId: String, knownHash: Int?) async throws -> (PostDetail, Int)? {
-        let html = try await fetch("\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=view")
-        let newHash = html.hashValue
-        guard newHash != knownHash else { return nil }
-        return (try parsePostDetail(html: html, boardId: boardId, postId: postId), newHash)
-    }
 
     private func parsePostDetail(html: String, boardId: String, postId: String) throws -> PostDetail {
         let doc = try SwiftSoup.parse(html)
