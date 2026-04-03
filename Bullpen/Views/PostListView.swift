@@ -277,7 +277,11 @@ struct PostListView: View {
                                 guard m != selectedMaemuri else { return }
                                 selectedMaemuri = m
                                 scrollToTopTrigger += 1
-                                Task { await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true) }
+                                vm.stopPolling()
+                                Task {
+                                    await vm.load(boardId: board.id, maemuri: activeMaemuri, reset: true)
+                                    vm.startPolling(boardId: board.id, maemuri: activeMaemuri)
+                                }
                             } label: {
                                 if m == selectedMaemuri { Label(m, systemImage: "checkmark") }
                                 else { Text(m) }
@@ -318,6 +322,13 @@ struct PostListView: View {
             await vm.load(boardId: board.id, reset: true)
             if board.id == "kbotown" { kboVM.start() }
             vm.startPolling(boardId: board.id, maemuri: activeMaemuri)
+        }
+        .onChange(of: pendingPost) { _, newValue in
+            if newValue != nil {
+                vm.stopPolling()
+            } else if scenePhase == .active {
+                vm.startPolling(boardId: board.id, maemuri: activeMaemuri)
+            }
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
