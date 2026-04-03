@@ -86,8 +86,8 @@ class PostListViewModel: ObservableObject {
         stopPolling()
         pollingTask = Task { [weak self] in
             while !Task.isCancelled {
-                // 60~90초 랜덤 지터 → 고정 주기 패턴 방지
-                let jitter = UInt64.random(in: 60_000_000_000...90_000_000_000)
+                // 30~60초 랜덤 지터 → 고정 주기 패턴 방지
+                let jitter = UInt64.random(in: 30_000_000_000...60_000_000_000)
                 try? await Task.sleep(nanoseconds: jitter)
                 guard !Task.isCancelled, let self else { break }
                 await self.silentRefresh(boardId: boardId, maemuri: maemuri)
