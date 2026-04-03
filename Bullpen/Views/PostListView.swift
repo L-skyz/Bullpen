@@ -85,12 +85,19 @@ class PostListViewModel: ObservableObject {
     func startPolling(boardId: String, maemuri: String?) {
         stopPolling()
         pollingTask = Task { [weak self] in
+            var backoff: UInt64 = 0
             while !Task.isCancelled {
-                // 30~60초 랜덤 지터 → 고정 주기 패턴 방지
-                let jitter = UInt64.random(in: 30_000_000_000...60_000_000_000)
-                try? await Task.sleep(nanoseconds: jitter)
+                // 백오프 중이면 먼저 대기, 아니면 30~60초 랜덤 지터
+                let delay = backoff > 0 ? backoff : UInt64.random(in: 30_000_000_000...60_000_000_000)
+                try? await Task.sleep(nanoseconds: delay)
                 guard !Task.isCancelled, let self else { break }
-                await self.silentRefresh(boardId: boardId, maemuri: maemuri)
+                let failed = await self.silentRefresh(boardId: boardId, maemuri: maemuri)
+                // 실패 시 백오프 (60s → 120s → 240s 최대), 성공 시 초기화
+                if failed {
+                    backoff = min((backoff == 0 ? 60_000_000_000 : backoff) * 2, 240_000_000_000)
+                } else {
+                    backoff = 0
+                }
             }
         }
     }
@@ -100,9 +107,11 @@ class PostListViewModel: ObservableObject {
         pollingTask = nil
     }
 
-    private func silentRefresh(boardId: String, maemuri: String?) async {
+    /// 성공 시 false, 실패 시 true 반환 (폴링 백오프 제어용)
+    @discardableResult
+    private func silentRefresh(boardId: String, maemuri: String?) async -> Bool {
         // 사용자가 페이지를 로드 중이면 건너뜀 (요청 중복 방지)
-        guard !isLoading, !posts.isEmpty else { return }
+        guard !isLoading, !posts.isEmpty else { return false }
         do {
             let fresh: [Post]
             if let m = maemuri, !m.isEmpty {
@@ -110,16 +119,22 @@ class PostListViewModel: ObservableObject {
             } else {
                 fresh = try await MLBParkService.shared.fetchPosts(boardId: boardId, page: 1)
             }
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return false }
 
             let existingIds = Set(posts.prefix(60).map { $0.id })
             let incoming = fresh.filter { !existingIds.contains($0.id) }
-            guard !incoming.isEmpty else { return }
-
-            pendingNewPosts = incoming
-            newPostCount = incoming.count
+            if !incoming.isEmpty {
+                pendingNewPosts = incoming
+                newPostCount = incoming.count
+            }
+            return false
+        } catch is CancellationError {
+            return false
+        } catch let e as URLError where e.code == .cancelled {
+            return false
         } catch {
-            // 백그라운드 갱신 실패는 조용히 무시
+            // 429/503 등 서버 에러 → 백오프 신호
+            return true
         }
     }
 
