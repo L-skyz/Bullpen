@@ -59,6 +59,7 @@ struct SearchView: View {
     @State private var searchScope: SearchScope = .title
     @State private var activeKeyword: String? = nil
     @State private var selectedPost: Post? = nil
+    @State private var debounceTask: Task<Void, Never>? = nil
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -77,6 +78,7 @@ struct SearchView: View {
                     Button {
                         searchText = ""
                         activeKeyword = nil
+                        debounceTask?.cancel()
                         vm.clear()
                     } label: {
                         Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
@@ -158,6 +160,22 @@ struct SearchView: View {
             PostDetailView(boardId: post.boardId, postId: post.id)
         }
         .onAppear { isFocused = true }
+        .onChange(of: searchText) { _, newValue in
+            debounceTask?.cancel()
+            let kw = newValue.trimmingCharacters(in: .whitespaces)
+            guard !kw.isEmpty else {
+                activeKeyword = nil
+                vm.clear()
+                return
+            }
+            debounceTask = Task {
+                try? await Task.sleep(nanoseconds: 400_000_000) // 0.4초
+                guard !Task.isCancelled else { return }
+                activeKeyword = kw
+                vm.clear()
+                await vm.search(boardId: boardId, keyword: kw, select: searchScope.rawValue, reset: true)
+            }
+        }
     }
 
     // MARK: - 서브뷰
