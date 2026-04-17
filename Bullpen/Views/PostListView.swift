@@ -381,6 +381,7 @@ struct NewPostBanner: View {
 
 struct PostRowView: View {
     let post: Post
+    var keyword: String? = nil
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
@@ -405,7 +406,12 @@ struct PostRowView: View {
                             .fontWeight(.semibold)
                             .foregroundColor(.orange).lineLimit(1)
                     }
-                    Text(post.title).font(.subheadline).lineLimit(1).truncationMode(.tail)
+                    if let kw = keyword {
+                        Text(highlightedTitle(post.title, keyword: kw))
+                            .font(.subheadline).lineLimit(1).truncationMode(.tail)
+                    } else {
+                        Text(post.title).font(.subheadline).lineLimit(1).truncationMode(.tail)
+                    }
                     if post.commentCount > 0 {
                         Text("[\(post.commentCount)]")
                             .font(.caption).fontWeight(.semibold)
@@ -426,6 +432,24 @@ struct PostRowView: View {
         let palette: [Color] = [.orange, .green, .orange, .purple, .pink, .teal, .indigo, .red, .cyan]
         let hash = name.unicodeScalars.reduce(0) { $0 + Int($1.value) }
         return palette[abs(hash) % palette.count]
+    }
+
+    private func highlightedTitle(_ title: String, keyword: String) -> AttributedString {
+        var attributed = AttributedString(title)
+        let lowerTitle = title.lowercased()
+        let lowerKw = keyword.lowercased()
+        var offset = lowerTitle.startIndex
+
+        while let range = lowerTitle.range(of: lowerKw, range: offset..<lowerTitle.endIndex) {
+            let distance = lowerTitle.distance(from: lowerTitle.startIndex, to: range.lowerBound)
+            let length = lowerTitle.distance(from: range.lowerBound, to: range.upperBound)
+            let attrStart = attributed.index(attributed.startIndex, offsetByCharacters: distance)
+            let attrEnd = attributed.index(attrStart, offsetByCharacters: length)
+            attributed[attrStart..<attrEnd].foregroundColor = .orange
+            attributed[attrStart..<attrEnd].backgroundColor = Color.orange.opacity(0.12)
+            offset = range.upperBound
+        }
+        return attributed
     }
 }
 

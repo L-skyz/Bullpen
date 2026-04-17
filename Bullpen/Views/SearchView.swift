@@ -66,7 +66,9 @@ struct SearchView: View {
 
             // ── 검색 입력창 ──
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundColor(.secondary)
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(isFocused ? .orange : .secondary)
+                    .animation(.easeInOut(duration: 0.2), value: isFocused)
                 TextField("검색어 입력", text: $searchText)
                     .focused($isFocused)
                     .onSubmit { runSearch() }
@@ -83,38 +85,67 @@ struct SearchView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
-            .background(Color(.secondarySystemBackground))
+            .background(isFocused ? Color(.systemBackground) : Color(.secondarySystemBackground))
             .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isFocused ? Color.orange : Color.clear, lineWidth: 1.5)
+            )
+            .shadow(color: isFocused ? Color.orange.opacity(0.2) : .clear, radius: 6, y: 2)
+            .animation(.easeInOut(duration: 0.2), value: isFocused)
             .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.vertical, 10)
 
-            // ── 검색 범위 피커 ──
-            Picker("", selection: $searchScope) {
+            // ── 칩 필터 ──
+            HStack(spacing: 6) {
                 ForEach(SearchScope.allCases, id: \.self) { scope in
-                    Text(scope.label).tag(scope)
+                    Button {
+                        guard scope != searchScope else { return }
+                        searchScope = scope
+                        if let kw = activeKeyword {
+                            vm.clear()
+                            Task { await vm.search(boardId: boardId, keyword: kw, select: scope.rawValue, reset: true) }
+                        }
+                    } label: {
+                        Text(scope.label)
+                            .font(.subheadline)
+                            .fontWeight(searchScope == scope ? .semibold : .regular)
+                            .foregroundColor(searchScope == scope ? .white : .secondary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(
+                                Capsule()
+                                    .fill(searchScope == scope ? Color.orange : Color(.secondarySystemBackground))
+                                    .shadow(color: searchScope == scope ? Color.orange.opacity(0.3) : .clear,
+                                            radius: 4, y: 2)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .animation(.spring(response: 0.25, dampingFraction: 0.8), value: searchScope)
                 }
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-            .onChange(of: searchScope) { _, _ in
-                guard let kw = activeKeyword else { return }
-                vm.clear()
-                Task { await vm.search(boardId: boardId, keyword: kw, select: searchScope.rawValue, reset: true) }
-            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Divider()
 
             // ── 상태별 콘텐츠 ──
             Group {
                 if activeKeyword == nil {
-                    emptyPrompt(icon: "magnifyingglass", message: "검색어를 입력하세요")
+                    emptyPrompt(
+                        icon: "magnifyingglass",
+                        message: "게시글 검색",
+                        description: "제목, 내용, 닉네임으로\n게시글을 찾을 수 있어요"
+                    )
                 } else if vm.isLoading && vm.results.isEmpty {
                     Spacer(); ProgressView(); Spacer()
                 } else if vm.results.isEmpty {
-                    emptyPrompt(icon: "doc.text.magnifyingglass",
-                                message: "검색 결과가 없습니다",
-                                sub: vm.error)
+                    emptyPrompt(
+                        icon: "doc.text.magnifyingglass",
+                        message: "검색 결과가 없습니다",
+                        error: vm.error
+                    )
                 } else {
                     resultList
                 }
@@ -132,24 +163,60 @@ struct SearchView: View {
     // MARK: - 서브뷰
 
     @ViewBuilder
-    private func emptyPrompt(icon: String, message: String, sub: String? = nil) -> some View {
+    private func emptyPrompt(icon: String, message: String, description: String? = nil, error: String? = nil) -> some View {
         Spacer()
         VStack(spacing: 12) {
-            Image(systemName: icon).font(.system(size: 44)).foregroundColor(.secondary)
-            Text(message).foregroundColor(.secondary)
-            if let s = sub { Text(s).font(.caption).foregroundColor(.red) }
+            ZStack {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color(.secondarySystemBackground))
+                    .frame(width: 56, height: 56)
+                Image(systemName: icon)
+                    .font(.system(size: 26))
+                    .foregroundColor(.secondary)
+            }
+            Text(message)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.primary)
+            if let desc = description {
+                Text(desc)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            if let e = error {
+                Text(e).font(.caption).foregroundColor(.red)
+            }
         }
         Spacer()
     }
 
     @ViewBuilder
     private var resultList: some View {
+        // 결과 수 표시
+        if let kw = activeKeyword {
+            HStack(spacing: 0) {
+                Text("'\(kw)' 검색 결과 ")
+                    .foregroundColor(.secondary)
+                Text("\(vm.results.count)건")
+                    .foregroundColor(.orange)
+                    .fontWeight(.semibold)
+            }
+            .font(.caption)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.systemBackground))
+
+            Divider()
+        }
+
         List {
             ForEach(vm.results) { post in
                 Button {
                     selectedPost = post
                 } label: {
-                    PostRowView(post: post)
+                    PostRowView(post: post, keyword: activeKeyword)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
