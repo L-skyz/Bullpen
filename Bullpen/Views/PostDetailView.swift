@@ -199,6 +199,11 @@ struct PostDetailView: View {
                                     .stroke(detailCardBorder, lineWidth: 1)
                             )
 
+                        DetailReactionBar(
+                            recommendCount: d.recommendCount,
+                            commentCount: d.commentCount
+                        )
+
                         commentsSection(for: d)
 
                         if auth.isLoggedIn {
@@ -359,10 +364,6 @@ struct PostDetailView: View {
                 }
             }
 
-            DetailReactionBar(
-                recommendCount: detail.recommendCount,
-                commentCount: detail.commentCount
-            )
         }
         .padding(18)
         .background(detailCardBackground)
