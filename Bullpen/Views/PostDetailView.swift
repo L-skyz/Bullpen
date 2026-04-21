@@ -361,8 +361,7 @@ struct PostDetailView: View {
 
             DetailReactionBar(
                 recommendCount: detail.recommendCount,
-                commentCount: detail.commentCount,
-                views: detail.views
+                commentCount: detail.commentCount
             )
         }
         .padding(18)
@@ -895,6 +894,10 @@ struct CommentRowView: View {
     @ViewBuilder
     private func replyCard(_ reply: Comment) -> some View {
         HStack(alignment: .top, spacing: 12) {
+            if reply.depth >= 2 {
+                Color.clear.frame(width: 18)
+            }
+
             ReplyConnectorView()
 
             VStack(alignment: .leading, spacing: 10) {
@@ -948,15 +951,14 @@ struct CommentRowView: View {
                         .foregroundStyle(detailAccent)
                 }
             }
+            .padding(14)
+            .background(detailReplyBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(detailReplyBorder, lineWidth: 1)
+            )
         }
-        .padding(14)
-        .padding(.leading, reply.depth >= 2 ? 18 : 0)
-        .background(detailReplyBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(detailReplyBorder, lineWidth: 1)
-        )
     }
 
     @ViewBuilder
@@ -1021,7 +1023,6 @@ private struct DetailAuthorBadge: View {
 private struct DetailReactionBar: View {
     let recommendCount: Int
     let commentCount: Int
-    let views: Int
 
     var body: some View {
         HStack(spacing: 0) {
@@ -1029,7 +1030,7 @@ private struct DetailReactionBar: View {
             Divider()
             item(systemName: "bubble.left.fill", title: "댓글", value: commentCount)
             Divider()
-            item(systemName: "eye.fill", title: "조회", value: views)
+            item(systemName: "square.and.arrow.up", title: "공유")
         }
         .frame(height: 44)
         .background(detailCardBackground)
@@ -1049,6 +1050,16 @@ private struct DetailReactionBar: View {
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+
+    private func item(systemName: String, title: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemName)
+            Text(title)
+        }
+        .font(.footnote.weight(.medium))
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 }
 
 private struct ReplyConnectorView: View {
@@ -1058,7 +1069,7 @@ private struct ReplyConnectorView: View {
             path.addLine(to: CGPoint(x: 8, y: 18))
             path.addLine(to: CGPoint(x: 16, y: 18))
         }
-        .stroke(detailThreadColor, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+        .stroke(detailThreadColor, style: StrokeStyle(lineWidth: 1.6, lineCap: .square, lineJoin: .miter))
         .frame(width: 16, height: 22)
         .padding(.top, 4)
     }
