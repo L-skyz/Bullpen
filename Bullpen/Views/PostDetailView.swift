@@ -2,8 +2,6 @@ import SwiftUI
 import WebKit
 import UIKit
 
-private let postDetailHeaderBackground = Color.orange.opacity(0.08)
-private let postAuthorHighlightBackground = Color.orange.opacity(0.16)
 
 @MainActor
 class PostDetailViewModel: ObservableObject {
@@ -180,199 +178,17 @@ struct PostDetailView: View {
             if let d = vm.detail {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-
-                        // ── 헤더 ──
-                        VStack(alignment: .leading, spacing: 8) {
-                            if !d.maemuri.isEmpty {
-                                Text(d.maemuri)
-                                    .font(.caption).fontWeight(.semibold)
-                                    .padding(.horizontal, 7).padding(.vertical, 3)
-                                    .background(Color.orange.opacity(0.12))
-                                    .foregroundColor(.orange)
-                                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                            }
-                            Text(d.title)
-                                .font(.title3).fontWeight(.bold)
-
-                            HStack(spacing: 10) {
-                                AsyncImage(url: URL(string: d.avatarUrl)) { phase in
-                                    switch phase {
-                                    case .success(let img):
-                                        img.resizable().scaledToFill()
-                                    default:
-                                        ZStack {
-                                            Circle().fill(avatarColor(d.author))
-                                            Text(String(d.author.prefix(1)))
-                                                .font(.system(size: 14, weight: .semibold))
-                                                .foregroundColor(.white)
-                                        }
-                                    }
-                                }
-                                .frame(width: 36, height: 36)
-                                .clipShape(Circle())
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(d.author)
-                                        .font(.subheadline).fontWeight(.semibold)
-                                    Text(d.date)
-                                        .font(.caption).foregroundColor(.secondary)
-                                }
-                                Spacer()
-                                // 내 게시글: 수정/삭제 메뉴
-                                if isMyPost {
-                                    Menu {
-                                        Button("수정") {
-                                            vm.actionError = nil
-                                            editTitle      = d.title
-                                            editContent    = stripHTML(d.contentHTML)
-                                            editCategoryId = resolveCategoryId(from: d.maemuri)
-                                            showEditPost   = true
-                                        }
-                                        Button("삭제", role: .destructive) {
-                                            showDeletePostAlert = true
-                                        }
-                                    } label: {
-                                        Image(systemName: "ellipsis.circle")
-                                            .font(.title3)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                            }
-
-                            HStack(spacing: 16) {
-                                Label("\(d.recommendCount)", systemImage: "hand.thumbsup")
-                                Label("\(d.views)",          systemImage: "eye")
-                                Label("\(d.commentCount)", systemImage: "bubble.left")
-                            }
-                            .font(.caption).foregroundColor(.secondary)
-                        }
-                        .padding()
-                        .background(postDetailHeaderBackground)
-
+                        postHeader(d)
                         Divider()
-
-                        // ── 본문 (WKWebView, div.ar_txt만) ──
                         HTMLContentView(html: d.contentHTML, height: $contentHeight)
                             .frame(height: contentHeight)
-
-                        Divider().padding(.top, 4)
-
-                        // ── 댓글 목록 ──
-                        VStack(alignment: .leading, spacing: 0) {
-                            HStack {
-                                Image(systemName: "bubble.left.and.bubble.right")
-                                    .foregroundColor(.secondary)
-                                Text("댓글 \(d.commentCount)개")
-                                    .font(.headline)
-                                Spacer()
-                                Button {
-                                    Task { await vm.load(boardId: boardId, postId: postId) }
-                                } label: {
-                                    Image(systemName: "arrow.clockwise")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                }
-                                .disabled(vm.isLoading)
-                            }
-                            .padding(.horizontal).padding(.top, 12).padding(.bottom, 4)
-
-                            ForEach(d.comments) { c in
-                                CommentRowView(
-                                    comment: c,
-                                    isPostAuthor: c.author.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        == d.author.trimmingCharacters(in: .whitespacesAndNewlines),
-                                    onEdit: {
-                                        editCommentText = c.content
-                                        editingComment  = c
-                                    },
-                                    onDelete: {
-                                        deletingComment = c
-                                    },
-                                    onReply: auth.isLoggedIn ? {
-                                        vm.replyingTo = c
-                                        commentFocused = true
-                                    } : nil,
-                                    onEditReply: { reply in
-                                        editCommentText = reply.content
-                                        editingComment  = reply
-                                    },
-                                    onDeleteReply: { reply in
-                                        deletingComment = reply
-                                    },
-                                    onReplyToReply: auth.isLoggedIn ? { reply in
-                                        vm.replyingTo = reply
-                                        commentFocused = true
-                                    } : nil
-                                )
-                                Divider().padding(.leading, 64)
-                            }
-                        }
-
-                        // ── 댓글 입력 ──
+                        postActionBar(d)
+                        Divider()
+                        commentsSection(d)
                         if auth.isLoggedIn {
-                            VStack(spacing: 0) {
-                                if let replyTo = vm.replyingTo {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "arrow.turn.down.left")
-                                            .font(.caption).foregroundColor(.orange)
-                                        Text("@\(replyTo.author)에게 답글")
-                                            .font(.caption).foregroundColor(.secondary)
-                                        Spacer()
-                                        Button {
-                                            vm.replyingTo = nil
-                                        } label: {
-                                            Image(systemName: "xmark.circle.fill")
-                                                .foregroundColor(.secondary)
-                                        }
-                                    }
-                                    .padding(.horizontal).padding(.vertical, 6)
-                                    .background(Color(.secondarySystemBackground))
-                                }
-                                VStack(alignment: .trailing, spacing: 8) {
-                                    TextField(
-                                        vm.replyingTo == nil ? "댓글을 입력하세요" : "답글을 입력하세요",
-                                        text: $vm.commentInput,
-                                        axis: .vertical
-                                    )
-                                    .lineLimit(5...10)
-                                    .frame(minHeight: 110, alignment: .top)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 12)
-                                    .background(Color(.systemBackground))
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .stroke(Color(.systemGray4), lineWidth: 1.5)
-                                    )
-                                    .focused($commentFocused)
-                                    Button {
-                                        Task { await vm.submitComment(boardId: boardId, postId: postId) }
-                                    } label: {
-                                        if vm.isSubmittingComment {
-                                            ProgressView()
-                                                .frame(width: 72, height: 36)
-                                                .background(Color.blue.opacity(0.15))
-                                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                        } else {
-                                            Text("등록")
-                                                .font(.subheadline).fontWeight(.semibold)
-                                                .foregroundColor(.blue)
-                                                .frame(width: 72, height: 36)
-                                                .background(Color.blue.opacity(0.15))
-                                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                        }
-                                    }
-                                    .disabled(
-                                        vm.commentInput.trimmingCharacters(in: .whitespacesAndNewlines).count > 300 ||
-                                        vm.isSubmittingComment
-                                    )
-                                }
-                                .padding()
-                            }
+                            commentInputBar
                         }
-
-                        // ── Burning 위젯 (실시간/주간/월간) ──
                         BurningWidgetView(boardId: boardId)
-
                         Spacer(minLength: 40)
                     }
                 }
@@ -391,7 +207,6 @@ struct PostDetailView: View {
         .task {
             await vm.load(boardId: boardId, postId: postId)
         }
-        // 게시글 삭제 확인
         .confirmationDialog("게시글을 삭제하시겠습니까?",
                             isPresented: $showDeletePostAlert,
                             titleVisibility: .visible) {
@@ -403,7 +218,6 @@ struct PostDetailView: View {
             }
             Button("취소", role: .cancel) { }
         }
-        // 댓글 삭제 확인
         .confirmationDialog("댓글을 삭제하시겠습니까?",
                             isPresented: Binding(
             get: { deletingComment != nil },
@@ -418,7 +232,6 @@ struct PostDetailView: View {
             }
             Button("취소", role: .cancel) { deletingComment = nil }
         }
-        // 댓글 수정 시트
         .sheet(item: $editingComment) { c in
             EditCommentSheet(text: $editCommentText) {
                 Task {
@@ -427,7 +240,6 @@ struct PostDetailView: View {
                 }
             }
         }
-        // 게시글 수정 시트
         .sheet(isPresented: $showEditPost) {
             EditPostSheet(
                 categoryId: $editCategoryId,
@@ -443,7 +255,6 @@ struct PostDetailView: View {
                 }
             }
         }
-        // 오류 토스트
         .alert("오류", isPresented: Binding(
             get: { vm.actionError != nil },
             set: { if !$0 { vm.actionError = nil } }
@@ -454,12 +265,274 @@ struct PostDetailView: View {
         }
     }
 
+    // MARK: - 헤더
+
+    @ViewBuilder
+    private func postHeader(_ d: PostDetail) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !d.maemuri.isEmpty {
+                Text(d.maemuri)
+                    .font(.caption).fontWeight(.semibold)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.12))
+                    .foregroundColor(.orange)
+                    .clipShape(Capsule())
+            }
+            Text(d.title)
+                .font(.title3).fontWeight(.bold)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                AsyncImage(url: URL(string: d.avatarUrl)) { phase in
+                    switch phase {
+                    case .success(let img):
+                        img.resizable().scaledToFill()
+                    default:
+                        ZStack {
+                            Circle().fill(avatarColor(d.author))
+                            Text(String(d.author.prefix(1)))
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+                    }
+                }
+                .frame(width: 32, height: 32)
+                .clipShape(Circle())
+
+                HStack(spacing: 5) {
+                    Text(d.author)
+                        .font(.subheadline).fontWeight(.semibold)
+                    authorBadgeView
+                }
+
+                Spacer()
+
+                HStack(spacing: 4) {
+                    Image(systemName: "eye")
+                        .font(.caption2)
+                    Text("\(d.views)")
+                        .font(.caption2)
+                }
+                .foregroundColor(.secondary)
+
+                Text(d.date)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+
+                if isMyPost {
+                    Menu {
+                        Button("수정") {
+                            vm.actionError = nil
+                            editTitle      = d.title
+                            editContent    = stripHTML(d.contentHTML)
+                            editCategoryId = resolveCategoryId(from: d.maemuri)
+                            showEditPost   = true
+                        }
+                        Button("삭제", role: .destructive) {
+                            showDeletePostAlert = true
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .padding(4)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal).padding(.vertical, 14)
+    }
+
+    private var authorBadgeView: some View {
+        Text("작성자")
+            .font(.caption2).fontWeight(.semibold)
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .background(Color.orange.opacity(0.12))
+            .foregroundColor(.orange)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    // MARK: - 액션 바
+
+    @ViewBuilder
+    private func postActionBar(_ d: PostDetail) -> some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "heart")
+                    .font(.subheadline)
+                Text("좋아요 \(d.recommendCount)")
+                    .font(.subheadline)
+            }
+            .foregroundColor(.secondary)
+            .frame(maxWidth: .infinity)
+
+            Divider().frame(height: 18)
+
+            HStack(spacing: 6) {
+                Image(systemName: "bubble.left")
+                    .font(.subheadline)
+                Text("댓글 \(d.commentCount)")
+                    .font(.subheadline)
+            }
+            .foregroundColor(.secondary)
+            .frame(maxWidth: .infinity)
+
+            Divider().frame(height: 18)
+
+            Group {
+                if let url = URL(string: "https://mlbpark.donga.com/mp/b.php?b=\(d.boardId)&id=\(d.id)&m=view") {
+                    ShareLink(item: url) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.vertical, 12)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Color(.systemGray5)).frame(height: 0.5)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color(.systemGray5)).frame(height: 0.5)
+        }
+    }
+
+    // MARK: - 댓글 섹션
+
+    @ViewBuilder
+    private func commentsSection(_ d: PostDetail) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("댓글 \(d.commentCount)")
+                    .font(.headline).fontWeight(.bold)
+                Spacer()
+                HStack(spacing: 3) {
+                    Text("최신순")
+                        .font(.caption)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9))
+                }
+                .foregroundColor(.secondary)
+
+                Button {
+                    Task { await vm.load(boardId: boardId, postId: postId) }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.leading, 8)
+                }
+                .disabled(vm.isLoading)
+            }
+            .padding(.horizontal).padding(.top, 16).padding(.bottom, 12)
+
+            ForEach(d.comments) { c in
+                CommentRowView(
+                    comment: c,
+                    postAuthor: d.author,
+                    onEdit: {
+                        editCommentText = c.content
+                        editingComment  = c
+                    },
+                    onDelete: {
+                        deletingComment = c
+                    },
+                    onReply: auth.isLoggedIn ? {
+                        vm.replyingTo = c
+                        commentFocused = true
+                    } : nil,
+                    onEditReply: { reply in
+                        editCommentText = reply.content
+                        editingComment  = reply
+                    },
+                    onDeleteReply: { reply in
+                        deletingComment = reply
+                    },
+                    onReplyToReply: auth.isLoggedIn ? { reply in
+                        vm.replyingTo = reply
+                        commentFocused = true
+                    } : nil
+                )
+                Divider()
+            }
+        }
+    }
+
+    // MARK: - 댓글 입력
+
+    @ViewBuilder
+    private var commentInputBar: some View {
+        VStack(spacing: 0) {
+            if let replyTo = vm.replyingTo {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.turn.down.left")
+                        .font(.caption).foregroundColor(.orange)
+                    Text("@\(replyTo.author)에게 답글")
+                        .font(.caption).foregroundColor(.secondary)
+                    Spacer()
+                    Button {
+                        vm.replyingTo = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(Color(.systemGray3))
+                    }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 8)
+                .background(Color(.secondarySystemBackground))
+            }
+
+            HStack(spacing: 10) {
+                TextField(
+                    vm.replyingTo == nil ? "댓글을 입력해주세요." : "답글을 입력해주세요.",
+                    text: $vm.commentInput,
+                    axis: .vertical
+                )
+                .lineLimit(1...6)
+                .font(.subheadline)
+                .focused($commentFocused)
+
+                if vm.isSubmittingComment {
+                    ProgressView()
+                        .frame(width: 32, height: 32)
+                } else {
+                    Button {
+                        Task { await vm.submitComment(boardId: boardId, postId: postId) }
+                    } label: {
+                        Image(systemName: "paperplane.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(
+                                vm.commentInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                ? Color(.systemGray3) : .orange
+                            )
+                    }
+                    .disabled(
+                        vm.commentInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                        vm.commentInput.trimmingCharacters(in: .whitespacesAndNewlines).count > 300 ||
+                        vm.isSubmittingComment
+                    )
+                }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .background(Color(.systemBackground))
+            .overlay(alignment: .top) {
+                Rectangle().fill(Color(.systemGray5)).frame(height: 0.5)
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
     private func resolveCategoryId(from maemuri: String) -> String {
         guard let board = currentBoard else { return "" }
         if let exact = board.writeCategories.first(where: { $0.name == maemuri }) {
             return exact.id
         }
-
         let normalized = normalizeCategoryName(maemuri)
         if let match = board.writeCategories.first(where: { normalizeCategoryName($0.name) == normalized }) {
             return match.id
@@ -768,7 +841,7 @@ struct HTMLContentView: UIViewRepresentable {
 
 struct CommentRowView: View {
     let comment: Comment
-    var isPostAuthor: Bool = false
+    let postAuthor: String
     var onEdit: (() -> Void)? = nil
     var onDelete: (() -> Void)? = nil
     var onReply: (() -> Void)? = nil
@@ -776,118 +849,159 @@ struct CommentRowView: View {
     var onDeleteReply: ((Comment) -> Void)? = nil
     var onReplyToReply: ((Comment) -> Void)? = nil
 
+    private var isCommentAuthor: Bool {
+        comment.author.trimmingCharacters(in: .whitespacesAndNewlines)
+            == postAuthor.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 10) {
-                AsyncImage(url: URL(string: comment.avatarUrl)) { phase in
-                    switch phase {
-                    case .success(let img):
-                        img.resizable().scaledToFill()
-                    default:
-                        ZStack {
-                            Circle().fill(avatarColor(comment.author))
-                            Text(String(comment.author.prefix(1)))
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.white)
-                        }
-                    }
-                }
-                .frame(width: 36, height: 36)
-                .clipShape(Circle())
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(comment.author).font(.subheadline).fontWeight(.semibold)
-                        if !comment.ip.isEmpty {
-                            Text(comment.ip).font(.caption2).foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Text(comment.date).font(.caption2).foregroundColor(.secondary)
-                        // 답글 버튼
-                        if let onReply {
-                            Button(action: onReply) {
-                                Image(systemName: "arrow.turn.down.left")
-                                    .font(.caption)
-                                    .foregroundColor(.orange.opacity(0.8))
-                                    .padding(4)
-                            }
-                        }
-                        // 내 댓글 수정/삭제 메뉴
-                        if comment.isOwn, onEdit != nil || onDelete != nil {
-                            Menu {
-                                if let onEdit {
-                                    Button("수정") { onEdit() }
-                                }
-                                if let onDelete {
-                                    Button("삭제", role: .destructive) { onDelete() }
-                                }
-                            } label: {
-                                Image(systemName: "ellipsis")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .padding(4)
-                            }
-                        }
-                    }
-                    Text(comment.content)
-                        .font(.subheadline)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(.horizontal).padding(.vertical, 14)
-            .background(isPostAuthor ? postAuthorHighlightBackground : Color.clear)
-
-            ForEach(comment.replies) { reply in
+            // ── 최상위 댓글 ──
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 10) {
-                    // depth=2(replied_re)이면 추가 들여쓰기
-                    if reply.depth >= 2 {
-                        Color.clear.frame(width: 20)
-                    }
-                    Image(systemName: "arrow.turn.down.right")
-                        .font(.caption).foregroundColor(.blue.opacity(0.6))
-                        .frame(width: 36).padding(.top, 2)
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack {
-                            Text(reply.author).font(.footnote).fontWeight(.semibold).foregroundColor(.primary)
-                            Spacer()
-                            Text(reply.date).font(.caption2).foregroundColor(.secondary)
-                            if let onReplyToReply {
-                                Button { onReplyToReply(reply) } label: {
-                                    Image(systemName: "arrow.turn.down.left")
-                                        .font(.caption)
-                                        .foregroundColor(.orange.opacity(0.8))
-                                        .padding(4)
-                                }
+                    commentAvatarView(author: comment.author, url: comment.avatarUrl, size: 38)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 0) {
+                            Text(comment.author)
+                                .font(.subheadline).fontWeight(.semibold)
+                            if isCommentAuthor {
+                                authorBadge.padding(.leading, 5)
                             }
-                            if reply.isOwn {
+                            if !comment.ip.isEmpty {
+                                Text(comment.ip)
+                                    .font(.caption2).foregroundColor(.secondary)
+                                    .padding(.leading, 5)
+                            }
+                            Spacer()
+                            Text(comment.date)
+                                .font(.caption2).foregroundColor(.secondary)
+                            if comment.isOwn {
                                 Menu {
-                                    if let onEditReply {
-                                        Button("수정") { onEditReply(reply) }
-                                    }
-                                    if let onDeleteReply {
-                                        Button("삭제", role: .destructive) { onDeleteReply(reply) }
-                                    }
+                                    if let onEdit { Button("수정") { onEdit() } }
+                                    if let onDelete { Button("삭제", role: .destructive) { onDelete() } }
                                 } label: {
                                     Image(systemName: "ellipsis")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        .padding(4)
+                                        .font(.caption).foregroundColor(.secondary)
+                                        .padding(.leading, 6)
                                 }
                             }
                         }
-                        if !reply.replyToAuthor.isEmpty {
-                            Text("@\(reply.replyToAuthor)에게 답글")
-                                .font(.footnote).foregroundColor(.primary)
-                                .padding(.bottom, 4)
-                        }
-                        Text(reply.content).font(.caption)
+                        Text(comment.content)
+                            .font(.subheadline)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .padding(.horizontal).padding(.vertical, 8)
-                .background(isPostAuthor ? Color.orange.opacity(0.12) : Color.blue.opacity(0.07))
+
+                // 액션 버튼 행
+                HStack(spacing: 14) {
+                    Spacer().frame(width: 48)
+                    if let onReply {
+                        Button(action: onReply) {
+                            Text("답글")
+                                .font(.caption).fontWeight(.medium)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 14)
+
+            // ── 대댓글 ──
+            ForEach(comment.replies) { reply in
+                replyRow(reply)
             }
         }
     }
 
+    @ViewBuilder
+    private func replyRow(_ reply: Comment) -> some View {
+        let isReplyAuthor = reply.author.trimmingCharacters(in: .whitespacesAndNewlines)
+            == postAuthor.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 8) {
+                // 들여쓰기 + 화살표
+                HStack(spacing: 0) {
+                    Color.clear.frame(width: reply.depth >= 2 ? 28 : 14)
+                    Image(systemName: "arrow.turn.down.right")
+                        .font(.system(size: 11))
+                        .foregroundColor(Color(.systemGray3))
+                        .frame(width: 20)
+                }
+
+                commentAvatarView(author: reply.author, url: reply.avatarUrl, size: 30)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 0) {
+                        Text(reply.author)
+                            .font(.footnote).fontWeight(.semibold)
+                        if isReplyAuthor {
+                            authorBadge.padding(.leading, 5)
+                        }
+                        Spacer()
+                        Text(reply.date)
+                            .font(.caption2).foregroundColor(.secondary)
+                        if reply.isOwn {
+                            Menu {
+                                if let onEditReply { Button("수정") { onEditReply(reply) } }
+                                if let onDeleteReply { Button("삭제", role: .destructive) { onDeleteReply(reply) } }
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .font(.caption2).foregroundColor(.secondary)
+                                    .padding(.leading, 6)
+                            }
+                        }
+                    }
+                    if !reply.replyToAuthor.isEmpty {
+                        Text("@\(reply.replyToAuthor)")
+                            .font(.caption2).foregroundColor(.orange)
+                    }
+                    Text(reply.content)
+                        .font(.footnote)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let onReplyToReply {
+                        Button { onReplyToReply(reply) } label: {
+                            Text("답글")
+                                .font(.caption).fontWeight(.medium)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.top, 2)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .background(Color(.secondarySystemBackground))
+    }
+
+    private var authorBadge: some View {
+        Text("작성자")
+            .font(.caption2).fontWeight(.semibold)
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .background(Color.orange.opacity(0.12))
+            .foregroundColor(.orange)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    private func commentAvatarView(author: String, url: String, size: CGFloat) -> some View {
+        AsyncImage(url: URL(string: url)) { phase in
+            switch phase {
+            case .success(let img):
+                img.resizable().scaledToFill()
+            default:
+                ZStack {
+                    Circle().fill(avatarColor(author))
+                    Text(String(author.prefix(1)))
+                        .font(.system(size: size * 0.38, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+    }
 }
 
 // MARK: - Burning 위젯
