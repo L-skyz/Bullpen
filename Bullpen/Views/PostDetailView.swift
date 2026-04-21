@@ -11,6 +11,8 @@ private let detailAccent = Color(red: 0.451, green: 0.376, blue: 0.875)
 private let detailReplyBackground = Color(red: 0.969, green: 0.957, blue: 1.0)
 private let detailReplyBorder = Color(red: 0.902, green: 0.882, blue: 0.988)
 private let detailThreadColor = Color(red: 0.839, green: 0.839, blue: 0.859)
+private let detailReplyIndent: CGFloat = 12
+private let detailCommentsSectionID = "detail-comments-section"
 
 @MainActor
 class PostDetailViewModel: ObservableObject {
@@ -19,6 +21,7 @@ class PostDetailViewModel: ObservableObject {
     @Published var error: String?
     @Published var commentInput = ""
     @Published var isSubmittingComment = false
+    @Published var isTogglingRecommend = false
     @Published var actionError: String?
     @Published var replyingTo: Comment? = nil
     private var loadGeneration = 0
@@ -143,6 +146,27 @@ class PostDetailViewModel: ObservableObject {
             actionError = error.localizedDescription
         }
     }
+
+    func toggleRecommend(boardId: String, postId: String) async {
+        guard !isTogglingRecommend, var detail else { return }
+
+        actionError = nil
+        isTogglingRecommend = true
+        defer { isTogglingRecommend = false }
+
+        do {
+            let result = try await MLBParkService.shared.toggleRecommend(
+                boardId: boardId,
+                postId: postId,
+                isRecommended: detail.isRecommended
+            )
+            detail.isRecommended = result.isRecommended
+            detail.recommendCount = max(0, detail.recommendCount + result.delta)
+            self.detail = detail
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
 }
 
 struct PostDetailView: View {
@@ -185,42 +209,58 @@ struct PostDetailView: View {
     var body: some View {
         Group {
             if let d = vm.detail {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        headerCard(for: d)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            headerCard(for: d)
 
-                        HTMLContentView(html: d.contentHTML, height: $contentHeight)
-                            .frame(height: contentHeight)
-                            .padding(18)
-                            .background(detailCardBackground)
-                            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                    .stroke(detailCardBorder, lineWidth: 1)
+                            HTMLContentView(html: d.contentHTML, height: $contentHeight)
+                                .frame(height: contentHeight)
+                                .padding(18)
+                                .background(detailCardBackground)
+                                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                        .stroke(detailCardBorder, lineWidth: 1)
+                                )
+
+                            DetailReactionBar(
+                                recommendCount: d.recommendCount,
+                                commentCount: d.commentCount,
+                                isRecommended: d.isRecommended,
+                                isTogglingRecommend: vm.isTogglingRecommend,
+                                shareURL: d.detailURL,
+                                onRecommend: {
+                                    Task {
+                                        await vm.toggleRecommend(boardId: boardId, postId: postId)
+                                    }
+                                },
+                                onComment: {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        proxy.scrollTo(detailCommentsSectionID, anchor: .top)
+                                    }
+                                }
                             )
 
-                        DetailReactionBar(
-                            recommendCount: d.recommendCount,
-                            commentCount: d.commentCount
-                        )
+                            commentsSection(for: d)
+                                .id(detailCommentsSectionID)
 
-                        commentsSection(for: d)
+                            if auth.isLoggedIn {
+                                commentComposer
+                            }
 
-                        if auth.isLoggedIn {
-                            commentComposer
+                            BurningWidgetView(boardId: boardId)
+
+                            Spacer(minLength: 24)
                         }
-
-                        BurningWidgetView(boardId: boardId)
-
-                        Spacer(minLength: 24)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 16)
+                        .padding(.bottom, 20)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
-                    .padding(.bottom, 20)
-                }
-                .background(detailScreenBackground)
-                .refreshable {
-                    await vm.load(boardId: boardId, postId: postId)
+                    .background(detailScreenBackground)
+                    .refreshable {
+                        await vm.load(boardId: boardId, postId: postId)
+                    }
                 }
             } else if vm.isLoading {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -880,7 +920,7 @@ struct CommentRowView: View {
                         replyCard(reply)
                     }
                 }
-                .padding(.leading, 18)
+                .padding(.leading, detailReplyIndent)
             }
         }
         .padding(16)
@@ -896,7 +936,7 @@ struct CommentRowView: View {
     private func replyCard(_ reply: Comment) -> some View {
         HStack(alignment: .top, spacing: 12) {
             if reply.depth >= 2 {
-                Color.clear.frame(width: 18)
+                Color.clear.frame(width: detailReplyIndent)
             }
 
             ReplyConnectorView()
@@ -936,9 +976,8 @@ struct CommentRowView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    Spacer(minLength: 8)
-
                     if reply.isOwn {
+                        Spacer(minLength: 8)
                         commentMenu(
                             onEdit: onEditReply.map { handler in { handler(reply) } },
                             onDelete: onDeleteReply.map { handler in { handler(reply) } }
@@ -1024,14 +1063,47 @@ private struct DetailAuthorBadge: View {
 private struct DetailReactionBar: View {
     let recommendCount: Int
     let commentCount: Int
+    let isRecommended: Bool
+    let isTogglingRecommend: Bool
+    let shareURL: URL?
+    let onRecommend: () -> Void
+    let onComment: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
-            item(systemName: "heart.fill", title: "좋아요", value: recommendCount)
+            Button(action: onRecommend) {
+                item(
+                    systemName: "heart.fill",
+                    title: "좋아요",
+                    value: recommendCount,
+                    tint: isRecommended ? .pink : .secondary
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(isTogglingRecommend)
+
             Divider()
-            item(systemName: "bubble.left.fill", title: "댓글", value: commentCount)
+
+            Button(action: onComment) {
+                item(
+                    systemName: "bubble.left.fill",
+                    title: "댓글",
+                    value: commentCount,
+                    tint: detailAccent
+                )
+            }
+            .buttonStyle(.plain)
+
             Divider()
-            item(systemName: "square.and.arrow.up", title: "공유")
+
+            if let shareURL {
+                ShareLink(item: shareURL) {
+                    item(systemName: "square.and.arrow.up", title: "공유", tint: .secondary)
+                }
+                .buttonStyle(.plain)
+            } else {
+                item(systemName: "square.and.arrow.up", title: "공유", tint: .secondary)
+            }
         }
         .frame(height: 44)
         .background(detailCardBackground)
@@ -1042,24 +1114,26 @@ private struct DetailReactionBar: View {
         )
     }
 
-    private func item(systemName: String, title: String, value: Int) -> some View {
+    private func item(systemName: String, title: String, value: Int, tint: Color) -> some View {
         HStack(spacing: 6) {
             Image(systemName: systemName)
             Text("\(title) \(value)")
         }
         .font(.footnote.weight(.medium))
-        .foregroundStyle(.secondary)
+        .foregroundStyle(tint)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
     }
 
-    private func item(systemName: String, title: String) -> some View {
+    private func item(systemName: String, title: String, tint: Color) -> some View {
         HStack(spacing: 6) {
             Image(systemName: systemName)
             Text(title)
         }
         .font(.footnote.weight(.medium))
-        .foregroundStyle(.secondary)
+        .foregroundStyle(tint)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
     }
 }
 

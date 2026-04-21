@@ -65,7 +65,12 @@ struct PostDetail: Identifiable {
     let date: String
     let views: Int
     let commentCount: Int
-    let recommendCount: Int
+    var recommendCount: Int
+    var isRecommended: Bool
     let contentHTML: String
     let comments: [Comment]
+
+    var detailURL: URL? {
+        URL(string: "https://mlbpark.donga.com/mp/b.php?b=\(boardId)&id=\(id)&m=view")
+    }
 }

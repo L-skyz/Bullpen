@@ -440,6 +440,8 @@ actor MLBParkService {
         let recommend = vals.count > 0 ? (Int(try vals.get(0).text()) ?? 0) : 0
         let views     = vals.count > 1 ? (Int(try vals.get(1).text()) ?? 0) : 0
         let commentCount = vals.count > 2 ? (Int(try vals.get(2).text()) ?? 0) : 0
+        let recommendButton = try doc.select("#contentDetail .wr_recommend, .wr_recommend").first()
+        let isRecommended = recommendButton?.hasClass("on") ?? false
 
         // 본문: div.ar_txt (사이드바/광고 제외한 순수 본문)
         // 프로토콜 없는 //youtube... src를 https://youtube...로 보정
@@ -547,9 +549,64 @@ actor MLBParkService {
             views: views,
             commentCount: flatList.count > 0 ? flatList.count : commentCount,
             recommendCount: recommend,
+            isRecommended: isRecommended,
             contentHTML: contentHTML,
             comments: comments
         )
+    }
+
+    // MARK: - 게시글 추천
+
+    func toggleRecommend(boardId: String, postId: String, isRecommended: Bool) async throws -> (isRecommended: Bool, delta: Int) {
+        await warmupIfNeeded()
+        guard let url = URL(string: "\(base)/mp/action.php") else { throw MLBParkError.invalidURL }
+
+        let mode = isRecommended ? "unlike" : "like"
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)", forHTTPHeaderField: "User-Agent")
+        req.setValue("\(base)/mp/b.php?b=\(boardId)&id=\(postId)&m=view", forHTTPHeaderField: "Referer")
+        req.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
+        req.httpBody = buildUTF8Form([
+            "m": mode,
+            "b": boardId,
+            "id": postId,
+        ])
+
+        let (data, resp) = try await performRequest(req)
+        if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
+            throw MLBParkError.networkError("HTTP \(http.statusCode)")
+        }
+
+        let result = Self.decodeServerText(data, response: resp)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        switch result {
+        case "ok":
+            return (true, isRecommended ? 0 : 1)
+        case "duplicate":
+            return (true, 0)
+        case "unlike":
+            return (false, isRecommended ? -1 : 0)
+        case "nologin":
+            throw MLBParkError.networkError("로그인 후 이용해주세요.")
+        case "reallogin":
+            throw MLBParkError.networkError("2군 회원은 추천이 제한됩니다.")
+        case "self":
+            throw MLBParkError.networkError("본인 글은 추천할 수 없습니다.")
+        case "notfound":
+            throw MLBParkError.networkError("존재하지 않는 게시물입니다.")
+        case "permission":
+            throw MLBParkError.networkError("추천 권한이 없습니다.")
+        case "lowlevel":
+            throw MLBParkError.networkError("회원 가입 후 7일이 지나야 추천이 가능합니다.")
+        case "":
+            throw MLBParkError.networkError("추천 처리 실패(빈 응답).")
+        default:
+            throw MLBParkError.networkError("추천 처리 실패: \(result)")
+        }
     }
 
     // MARK: - 글쓰기
