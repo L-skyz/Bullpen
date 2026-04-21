@@ -11,7 +11,7 @@ private let detailAccent = Color(red: 0.451, green: 0.376, blue: 0.875)
 private let detailReplyBackground = Color(red: 0.969, green: 0.957, blue: 1.0)
 private let detailReplyBorder = Color(red: 0.902, green: 0.882, blue: 0.988)
 private let detailThreadColor = Color(red: 0.839, green: 0.839, blue: 0.859)
-private let detailReplyIndent: CGFloat = 12
+private let detailReplyIndent: CGFloat = 0
 private let detailCommentsSectionID = "detail-comments-section"
 
 @MainActor
