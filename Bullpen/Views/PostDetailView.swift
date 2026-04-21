@@ -992,6 +992,7 @@ struct CommentRowView: View {
                 }
             }
             .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(detailReplyBackground)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(
@@ -999,6 +1000,7 @@ struct CommentRowView: View {
                     .stroke(detailReplyBorder, lineWidth: 1)
             )
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
