@@ -24,9 +24,7 @@ class PostDetailViewModel: ObservableObject {
     @Published var isTogglingRecommend = false
     @Published var actionError: String?
     @Published var replyingTo: Comment? = nil
-    @Published var newCommentCount = 0
     private var loadGeneration = 0
-    private var pendingFreshDetail: PostDetail?
     private var pollingTask: Task<Void, Never>?
 
     // MARK: - 자동 폴링 (봇 탐지 회피: 30~60초 랜덤 간격)
@@ -54,20 +52,13 @@ class PostDetailViewModel: ObservableObject {
         pollingTask = nil
     }
 
-    /// 성공 시 false, 실패 시 true 반환 (폴링 백오프 제어용)
     @discardableResult
     private func silentRefresh(boardId: String, postId: String) async -> Bool {
-        guard !isLoading, let existing = detail else { return false }
+        guard !isLoading, detail != nil else { return false }
         do {
             let fresh = try await MLBParkService.shared.fetchPostDetail(boardId: boardId, postId: postId)
             guard !Task.isCancelled else { return false }
-            let existingSeqs = allCommentSeqs(in: existing)
-            let freshSeqs = allCommentSeqs(in: fresh)
-            let newSeqs = freshSeqs.subtracting(existingSeqs)
-            if !newSeqs.isEmpty {
-                pendingFreshDetail = fresh
-                newCommentCount = newSeqs.count
-            }
+            detail = fresh
             return false
         } catch is CancellationError {
             return false
@@ -76,29 +67,6 @@ class PostDetailViewModel: ObservableObject {
         } catch {
             return true
         }
-    }
-
-    private func allCommentSeqs(in detail: PostDetail) -> Set<String> {
-        var seqs = Set<String>()
-        for comment in detail.comments {
-            seqs.insert(comment.seq)
-            for reply in comment.replies {
-                seqs.insert(reply.seq)
-            }
-        }
-        return seqs
-    }
-
-    func applyPendingComments() {
-        guard let fresh = pendingFreshDetail else { return }
-        detail = fresh
-        pendingFreshDetail = nil
-        newCommentCount = 0
-    }
-
-    func clearPendingComments() {
-        pendingFreshDetail = nil
-        newCommentCount = 0
     }
 
     func load(boardId: String, postId: String) async {
@@ -112,7 +80,6 @@ class PostDetailViewModel: ObservableObject {
     }
 
     private func runLoad(boardId: String, postId: String, generation: Int) async {
-        clearPendingComments()
         isLoading = true
         error = nil
         defer {
@@ -287,8 +254,7 @@ struct PostDetailView: View {
         Group {
             if let d = vm.detail {
                 ScrollViewReader { proxy in
-                    ZStack(alignment: .top) {
-                        ScrollView {
+                    ScrollView {
                             VStack(alignment: .leading, spacing: 18) {
                                 headerCard(for: d)
 
@@ -335,23 +301,9 @@ struct PostDetailView: View {
                             .padding(.top, 16)
                             .padding(.bottom, 20)
                         }
-                        .background(detailScreenBackground)
-                        .refreshable {
-                            await vm.load(boardId: boardId, postId: postId)
-                        }
-
-                        if vm.newCommentCount > 0 {
-                            NewCommentBanner(count: vm.newCommentCount) {
-                                vm.applyPendingComments()
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    proxy.scrollTo(detailCommentsSectionID, anchor: .top)
-                                }
-                            }
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: vm.newCommentCount)
-                            .padding(.top, 8)
-                            .zIndex(1)
-                        }
+                    .background(detailScreenBackground)
+                    .refreshable {
+                        await vm.load(boardId: boardId, postId: postId)
                     }
                 }
             } else if vm.isLoading {
@@ -1398,31 +1350,6 @@ private struct ThreeSidedBorder: Shape {
                  radius: r, startAngle: .degrees(270), endAngle: .degrees(0), clockwise: false)
         p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
         return p
-    }
-}
-
-// MARK: - New Comment Banner
-
-struct NewCommentBanner: View {
-    let count: Int
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.down")
-                    .font(.caption.weight(.bold))
-                Text("새 댓글 \(count)개")
-                    .font(.caption.weight(.semibold))
-            }
-            .foregroundColor(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(detailAccent.opacity(0.92))
-            .clipShape(Capsule())
-            .shadow(color: .black.opacity(0.18), radius: 4, y: 2)
-        }
-        .buttonStyle(.plain)
     }
 }
 
