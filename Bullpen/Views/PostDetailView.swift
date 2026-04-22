@@ -25,6 +25,49 @@ class PostDetailViewModel: ObservableObject {
     @Published var actionError: String?
     @Published var replyingTo: Comment? = nil
     private var loadGeneration = 0
+    private var pollingTask: Task<Void, Never>?
+
+    // MARK: - 자동 폴링 (봇 탐지 회피: 30~60초 랜덤 간격)
+
+    func startPolling(boardId: String, postId: String) {
+        stopPolling()
+        pollingTask = Task { [weak self] in
+            var backoff: UInt64 = 0
+            while !Task.isCancelled {
+                let delay = backoff > 0 ? backoff : UInt64.random(in: 30_000_000_000...60_000_000_000)
+                try? await Task.sleep(nanoseconds: delay)
+                guard !Task.isCancelled, let self else { break }
+                let failed = await self.silentRefresh(boardId: boardId, postId: postId)
+                if failed {
+                    backoff = min((backoff == 0 ? 60_000_000_000 : backoff) * 2, 240_000_000_000)
+                } else {
+                    backoff = 0
+                }
+            }
+        }
+    }
+
+    func stopPolling() {
+        pollingTask?.cancel()
+        pollingTask = nil
+    }
+
+    @discardableResult
+    private func silentRefresh(boardId: String, postId: String) async -> Bool {
+        guard !isLoading, detail != nil else { return false }
+        do {
+            let fresh = try await MLBParkService.shared.fetchPostDetail(boardId: boardId, postId: postId)
+            guard !Task.isCancelled else { return false }
+            detail = fresh
+            return false
+        } catch is CancellationError {
+            return false
+        } catch let e as URLError where e.code == .cancelled {
+            return false
+        } catch {
+            return true
+        }
+    }
 
     func load(boardId: String, postId: String) async {
         loadGeneration += 1
@@ -175,6 +218,7 @@ struct PostDetailView: View {
     @StateObject private var vm = PostDetailViewModel()
     @EnvironmentObject var auth: AuthService
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @State private var contentHeight: CGFloat = 200
     @FocusState private var commentFocused: Bool
 
@@ -211,52 +255,52 @@ struct PostDetailView: View {
             if let d = vm.detail {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 18) {
-                            headerCard(for: d)
+                            VStack(alignment: .leading, spacing: 18) {
+                                headerCard(for: d)
 
-                            HTMLContentView(html: d.contentHTML, height: $contentHeight)
-                                .frame(height: contentHeight)
-                                .padding(18)
-                                .background(detailCardBackground)
-                                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                        .stroke(detailCardBorder, lineWidth: 1)
+                                HTMLContentView(html: d.contentHTML, height: $contentHeight)
+                                    .frame(height: contentHeight)
+                                    .padding(18)
+                                    .background(detailCardBackground)
+                                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                            .stroke(detailCardBorder, lineWidth: 1)
+                                    )
+
+                                DetailReactionBar(
+                                    recommendCount: d.recommendCount,
+                                    commentCount: d.commentCount,
+                                    isRecommended: d.isRecommended,
+                                    isTogglingRecommend: vm.isTogglingRecommend,
+                                    shareURL: d.detailURL,
+                                    onRecommend: {
+                                        Task {
+                                            await vm.toggleRecommend(boardId: boardId, postId: postId)
+                                        }
+                                    },
+                                    onComment: {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            proxy.scrollTo(detailCommentsSectionID, anchor: .top)
+                                        }
+                                    }
                                 )
 
-                            DetailReactionBar(
-                                recommendCount: d.recommendCount,
-                                commentCount: d.commentCount,
-                                isRecommended: d.isRecommended,
-                                isTogglingRecommend: vm.isTogglingRecommend,
-                                shareURL: d.detailURL,
-                                onRecommend: {
-                                    Task {
-                                        await vm.toggleRecommend(boardId: boardId, postId: postId)
-                                    }
-                                },
-                                onComment: {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        proxy.scrollTo(detailCommentsSectionID, anchor: .top)
-                                    }
+                                commentsSection(for: d)
+                                    .id(detailCommentsSectionID)
+
+                                if auth.isLoggedIn {
+                                    commentComposer
                                 }
-                            )
 
-                            commentsSection(for: d)
-                                .id(detailCommentsSectionID)
+                                BurningWidgetView(boardId: boardId)
 
-                            if auth.isLoggedIn {
-                                commentComposer
+                                Spacer(minLength: 24)
                             }
-
-                            BurningWidgetView(boardId: boardId)
-
-                            Spacer(minLength: 24)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 16)
+                            .padding(.bottom, 20)
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 16)
-                        .padding(.bottom, 20)
-                    }
                     .background(detailScreenBackground)
                     .refreshable {
                         await vm.load(boardId: boardId, postId: postId)
@@ -274,6 +318,14 @@ struct PostDetailView: View {
         .background(detailScreenBackground.ignoresSafeArea())
         .task {
             await vm.load(boardId: boardId, postId: postId)
+            vm.startPolling(boardId: boardId, postId: postId)
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                vm.startPolling(boardId: boardId, postId: postId)
+            } else {
+                vm.stopPolling()
+            }
         }
         // 게시글 삭제 확인
         .confirmationDialog("게시글을 삭제하시겠습니까?",
