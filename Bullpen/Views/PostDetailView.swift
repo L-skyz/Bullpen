@@ -24,7 +24,82 @@ class PostDetailViewModel: ObservableObject {
     @Published var isTogglingRecommend = false
     @Published var actionError: String?
     @Published var replyingTo: Comment? = nil
+    @Published var newCommentCount = 0
     private var loadGeneration = 0
+    private var pendingFreshDetail: PostDetail?
+    private var pollingTask: Task<Void, Never>?
+
+    // MARK: - 자동 폴링 (봇 탐지 회피: 30~60초 랜덤 간격)
+
+    func startPolling(boardId: String, postId: String) {
+        stopPolling()
+        pollingTask = Task { [weak self] in
+            var backoff: UInt64 = 0
+            while !Task.isCancelled {
+                let delay = backoff > 0 ? backoff : UInt64.random(in: 30_000_000_000...60_000_000_000)
+                try? await Task.sleep(nanoseconds: delay)
+                guard !Task.isCancelled, let self else { break }
+                let failed = await self.silentRefresh(boardId: boardId, postId: postId)
+                if failed {
+                    backoff = min((backoff == 0 ? 60_000_000_000 : backoff) * 2, 240_000_000_000)
+                } else {
+                    backoff = 0
+                }
+            }
+        }
+    }
+
+    func stopPolling() {
+        pollingTask?.cancel()
+        pollingTask = nil
+    }
+
+    /// 성공 시 false, 실패 시 true 반환 (폴링 백오프 제어용)
+    @discardableResult
+    private func silentRefresh(boardId: String, postId: String) async -> Bool {
+        guard !isLoading, let existing = detail else { return false }
+        do {
+            let fresh = try await MLBParkService.shared.fetchPostDetail(boardId: boardId, postId: postId)
+            guard !Task.isCancelled else { return false }
+            let existingSeqs = allCommentSeqs(in: existing)
+            let freshSeqs = allCommentSeqs(in: fresh)
+            let newSeqs = freshSeqs.subtracting(existingSeqs)
+            if !newSeqs.isEmpty {
+                pendingFreshDetail = fresh
+                newCommentCount = newSeqs.count
+            }
+            return false
+        } catch is CancellationError {
+            return false
+        } catch let e as URLError where e.code == .cancelled {
+            return false
+        } catch {
+            return true
+        }
+    }
+
+    private func allCommentSeqs(in detail: PostDetail) -> Set<String> {
+        var seqs = Set<String>()
+        for comment in detail.comments {
+            seqs.insert(comment.seq)
+            for reply in comment.replies {
+                seqs.insert(reply.seq)
+            }
+        }
+        return seqs
+    }
+
+    func applyPendingComments() {
+        guard let fresh = pendingFreshDetail else { return }
+        detail = fresh
+        pendingFreshDetail = nil
+        newCommentCount = 0
+    }
+
+    func clearPendingComments() {
+        pendingFreshDetail = nil
+        newCommentCount = 0
+    }
 
     func load(boardId: String, postId: String) async {
         loadGeneration += 1
@@ -37,6 +112,7 @@ class PostDetailViewModel: ObservableObject {
     }
 
     private func runLoad(boardId: String, postId: String, generation: Int) async {
+        clearPendingComments()
         isLoading = true
         error = nil
         defer {
@@ -175,6 +251,7 @@ struct PostDetailView: View {
     @StateObject private var vm = PostDetailViewModel()
     @EnvironmentObject var auth: AuthService
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @State private var contentHeight: CGFloat = 200
     @FocusState private var commentFocused: Bool
 
@@ -210,56 +287,71 @@ struct PostDetailView: View {
         Group {
             if let d = vm.detail {
                 ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 18) {
-                            headerCard(for: d)
+                    ZStack(alignment: .top) {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 18) {
+                                headerCard(for: d)
 
-                            HTMLContentView(html: d.contentHTML, height: $contentHeight)
-                                .frame(height: contentHeight)
-                                .padding(18)
-                                .background(detailCardBackground)
-                                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                        .stroke(detailCardBorder, lineWidth: 1)
+                                HTMLContentView(html: d.contentHTML, height: $contentHeight)
+                                    .frame(height: contentHeight)
+                                    .padding(18)
+                                    .background(detailCardBackground)
+                                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                            .stroke(detailCardBorder, lineWidth: 1)
+                                    )
+
+                                DetailReactionBar(
+                                    recommendCount: d.recommendCount,
+                                    commentCount: d.commentCount,
+                                    isRecommended: d.isRecommended,
+                                    isTogglingRecommend: vm.isTogglingRecommend,
+                                    shareURL: d.detailURL,
+                                    onRecommend: {
+                                        Task {
+                                            await vm.toggleRecommend(boardId: boardId, postId: postId)
+                                        }
+                                    },
+                                    onComment: {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            proxy.scrollTo(detailCommentsSectionID, anchor: .top)
+                                        }
+                                    }
                                 )
 
-                            DetailReactionBar(
-                                recommendCount: d.recommendCount,
-                                commentCount: d.commentCount,
-                                isRecommended: d.isRecommended,
-                                isTogglingRecommend: vm.isTogglingRecommend,
-                                shareURL: d.detailURL,
-                                onRecommend: {
-                                    Task {
-                                        await vm.toggleRecommend(boardId: boardId, postId: postId)
-                                    }
-                                },
-                                onComment: {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        proxy.scrollTo(detailCommentsSectionID, anchor: .top)
-                                    }
+                                commentsSection(for: d)
+                                    .id(detailCommentsSectionID)
+
+                                if auth.isLoggedIn {
+                                    commentComposer
                                 }
-                            )
 
-                            commentsSection(for: d)
-                                .id(detailCommentsSectionID)
+                                BurningWidgetView(boardId: boardId)
 
-                            if auth.isLoggedIn {
-                                commentComposer
+                                Spacer(minLength: 24)
                             }
-
-                            BurningWidgetView(boardId: boardId)
-
-                            Spacer(minLength: 24)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 16)
+                            .padding(.bottom, 20)
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 16)
-                        .padding(.bottom, 20)
-                    }
-                    .background(detailScreenBackground)
-                    .refreshable {
-                        await vm.load(boardId: boardId, postId: postId)
+                        .background(detailScreenBackground)
+                        .refreshable {
+                            await vm.load(boardId: boardId, postId: postId)
+                        }
+
+                        if vm.newCommentCount > 0 {
+                            NewCommentBanner(count: vm.newCommentCount) {
+                                vm.applyPendingComments()
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    proxy.scrollTo(detailCommentsSectionID, anchor: .top)
+                                }
+                            }
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: vm.newCommentCount)
+                            .padding(.top, 8)
+                            .zIndex(1)
+                        }
                     }
                 }
             } else if vm.isLoading {
@@ -274,6 +366,14 @@ struct PostDetailView: View {
         .background(detailScreenBackground.ignoresSafeArea())
         .task {
             await vm.load(boardId: boardId, postId: postId)
+            vm.startPolling(boardId: boardId, postId: postId)
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                vm.startPolling(boardId: boardId, postId: postId)
+            } else {
+                vm.stopPolling()
+            }
         }
         // 게시글 삭제 확인
         .confirmationDialog("게시글을 삭제하시겠습니까?",
@@ -1298,6 +1398,31 @@ private struct ThreeSidedBorder: Shape {
                  radius: r, startAngle: .degrees(270), endAngle: .degrees(0), clockwise: false)
         p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
         return p
+    }
+}
+
+// MARK: - New Comment Banner
+
+struct NewCommentBanner: View {
+    let count: Int
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.down")
+                    .font(.caption.weight(.bold))
+                Text("새 댓글 \(count)개")
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(detailAccent.opacity(0.92))
+            .clipShape(Capsule())
+            .shadow(color: .black.opacity(0.18), radius: 4, y: 2)
+        }
+        .buttonStyle(.plain)
     }
 }
 
