@@ -160,7 +160,8 @@ jobs:
           set -euo pipefail
 
           BUNDLE_ID="${APP_BUNDLE_ID:-com.bullpen.app}"
-          TEAM_ID="${APP_DEVELOPMENT_TEAM:-ZG44U5JF72}"
+          : "${APP_DEVELOPMENT_TEAM:?APP_DEVELOPMENT_TEAM secret is required}"
+          TEAM_ID="$APP_DEVELOPMENT_TEAM"
 
           xcodebuild archive \
             -project Bullpen.xcodeproj \
@@ -190,7 +191,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          TEAM_ID="${APP_DEVELOPMENT_TEAM:-ZG44U5JF72}"
+          : "${APP_DEVELOPMENT_TEAM:?APP_DEVELOPMENT_TEAM secret is required}"
+          TEAM_ID="$APP_DEVELOPMENT_TEAM"
 
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
