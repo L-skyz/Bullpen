@@ -222,6 +222,56 @@ jobs:
           name: Bullpen-ipa
           path: ${{ runner.temp }}/ipa/Bullpen.ipa
 
+      - name: Upload IPA to OTA server
+        if: success()
+        env:
+          SERVER_URL: ${{ secrets.SERVER_URL }}
+          UPLOAD_SECRET: ${{ secrets.UPLOAD_SECRET }}
+          APP_BUNDLE_ID: ${{ secrets.APP_BUNDLE_ID }}
+        run: |
+          set -euo pipefail
+
+          [ -z "${SERVER_URL:-}" ] && exit 0
+          BUNDLE_ID="${APP_BUNDLE_ID:-com.bullpen.app}"
+          curl -sS --fail-with-body -X POST "${SERVER_URL%/}/ota/upload" \
+            -H "x-upload-secret: $UPLOAD_SECRET" \
+            -H "x-bundle-id: $BUNDLE_ID" \
+            -H "x-bundle-name: Bullpen" \
+            -H "x-bundle-version: 1.0.0" \
+            -H "x-repo: ${{ github.repository }}" \
+            -H "x-branch: ${{ github.ref_name }}" \
+            -H "x-run-id: ${{ github.run_id }}" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary "@$RUNNER_TEMP/ipa/Bullpen.ipa"
+
+      - name: Notify backend
+        if: always()
+        env:
+          NOTIFY_SECRET: ${{ secrets.NOTIFY_SECRET }}
+          SERVER_URL: ${{ secrets.SERVER_URL }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          [ -z "${SERVER_URL:-}" ] && exit 0
+          [ -z "${NOTIFY_SECRET:-}" ] && exit 0
+
+          HAS_IPA=false
+          [ -f "$RUNNER_TEMP/ipa/Bullpen.ipa" ] && HAS_IPA=true
+
+          BODY=$(jq -n \
+            --arg repo "${{ github.repository }}" \
+            --arg branch "${{ github.ref_name }}" \
+            --arg run_id "${{ github.run_id }}" \
+            --arg status "$JOB_STATUS" \
+            --argjson has_ipa "$HAS_IPA" \
+            --arg commit_sha "${{ github.sha }}" \
+            --arg commit_message "${{ github.event.head_commit.message }}" \
+            '{repo:$repo,branch:$branch,run_id:$run_id,status:$status,has_ipa:$has_ipa,commit_sha:$commit_sha,commit_message:$commit_message}')
+
+          curl --fail-with-body --retry 3 --retry-delay 2 -sS -X POST "${SERVER_URL%/}/webhook/github-actions" \
+            -H "Content-Type: application/json" \
+            -H "x-notify-secret: $NOTIFY_SECRET" \
+            -d "$BODY"
+
       - name: Summary
         run: |
           echo "### Bullpen IPA" >> "$GITHUB_STEP_SUMMARY"
