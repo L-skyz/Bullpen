@@ -45,6 +45,8 @@ jobs:
 
           test -n "$DIST_CERT_P12_B64"
           test -n "$DIST_CERT_PASSWORD"
+          test -n "$DEV_CERT_P12_B64"
+          test -n "$DEV_CERT_PASSWORD"
           test -n "$ASC_KEY_BASE64"
           test -n "$ASC_KEY_ID"
           test -n "$ASC_ISSUER_ID"
@@ -53,99 +55,17 @@ jobs:
           mkdir -p /tmp/asc
           echo -n "$ASC_KEY_BASE64" | base64 --decode > /tmp/asc/key.p8
           echo -n "$DIST_CERT_P12_B64" | base64 --decode > /tmp/dist_cert.p12
+          echo -n "$DEV_CERT_P12_B64" | base64 --decode > /tmp/dev_cert.p12
 
           security create-keychain -p "" "$KEYCHAIN_PATH"
           security default-keychain -s "$KEYCHAIN_PATH"
           security unlock-keychain -p "" "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH"
           security import /tmp/dist_cert.p12 -k "$KEYCHAIN_PATH" -P "$DIST_CERT_PASSWORD" -T /usr/bin/codesign
-
-          if [ -n "${DEV_CERT_P12_B64:-}" ]; then
-            echo -n "$DEV_CERT_P12_B64" | base64 --decode > /tmp/dev_cert.p12
-            security import /tmp/dev_cert.p12 -k "$KEYCHAIN_PATH" -P "${DEV_CERT_PASSWORD:-}" -T /usr/bin/codesign
-          fi
+          security import /tmp/dev_cert.p12 -k "$KEYCHAIN_PATH" -P "$DEV_CERT_PASSWORD" -T /usr/bin/codesign
 
           security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH"
           security find-identity -v -p codesigning "$KEYCHAIN_PATH" | tee /tmp/signing-identities.txt
-
-          cat > /tmp/create_apple_development_certificate.rb <<'RUBY'
-          require 'base64'
-          require 'json'
-          require 'net/http'
-          require 'openssl'
-
-          def jwt
-            key = OpenSSL::PKey.read(File.read('/tmp/asc/key.p8'))
-            now = Time.now.to_i
-            header = Base64.urlsafe_encode64(JSON.generate(alg: 'ES256', kid: ENV.fetch('ASC_KEY_ID')), padding: false)
-            payload = Base64.urlsafe_encode64(JSON.generate(iss: ENV.fetch('ASC_ISSUER_ID'), iat: now, exp: now + 1200, aud: 'appstoreconnect-v1'), padding: false)
-            unsigned = "#{header}.#{payload}"
-            signature = key.sign(OpenSSL::Digest::SHA256.new, unsigned)
-            asn1 = OpenSSL::ASN1.decode(signature).value
-            r = asn1[0].value.to_s(2).rjust(32, "\x00")[-32..]
-            s = asn1[1].value.to_s(2).rjust(32, "\x00")[-32..]
-            "#{unsigned}.#{Base64.urlsafe_encode64(r + s, padding: false)}"
-          end
-
-          auth = { 'Authorization' => "Bearer #{jwt}", 'Content-Type' => 'application/json' }
-
-          def request(method, uri, auth, body = nil)
-            Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
-              request = method.new(uri, auth)
-              request.body = JSON.generate(body) if body
-              http.request(request)
-            end
-          end
-
-          query = URI.encode_www_form(
-            'filter[certificateType]' => 'DEVELOPMENT',
-            'fields[certificates]' => 'certificateType,displayName,serialNumber,expirationDate,activated',
-            'limit' => '200'
-          )
-          list_response = request(Net::HTTP::Get, URI("https://api.appstoreconnect.apple.com/v1/certificates?#{query}"), auth)
-          unless list_response.is_a?(Net::HTTPSuccess)
-            warn list_response.body
-            abort "Failed to list Apple Development certificates: HTTP #{list_response.code}"
-          end
-
-          JSON.parse(list_response.body).fetch('data', []).each do |certificate|
-            delete_response = request(Net::HTTP::Delete, URI("https://api.appstoreconnect.apple.com/v1/certificates/#{certificate.fetch('id')}"), auth)
-            next if delete_response.code == '204'
-
-            warn delete_response.body
-            abort "Failed to revoke Apple Development certificate #{certificate.fetch('id')}: HTTP #{delete_response.code}"
-          end
-
-          body = {
-            data: {
-              type: 'certificates',
-              attributes: {
-                certificateType: 'DEVELOPMENT',
-                csrContent: File.read('/tmp/ci_dev.csr')
-              }
-            }
-          }
-
-          response = request(Net::HTTP::Post, URI('https://api.appstoreconnect.apple.com/v1/certificates'), auth, body)
-          unless response.is_a?(Net::HTTPSuccess)
-            warn response.body
-            abort "Failed to create Apple Development certificate: HTTP #{response.code}"
-          end
-
-          content = JSON.parse(response.body).dig('data', 'attributes', 'certificateContent')
-          abort 'App Store Connect did not return certificateContent' if content.to_s.empty?
-          File.binwrite('/tmp/ci_dev.cer', Base64.decode64(content))
-          RUBY
-
-          if ! grep -Eq "Apple Development" /tmp/signing-identities.txt; then
-            openssl genrsa -out /tmp/ci_dev.key 2048
-            openssl req -new -key /tmp/ci_dev.key -out /tmp/ci_dev.csr -subj "/CN=GitHub Actions CI Development"
-            ruby /tmp/create_apple_development_certificate.rb
-            security import /tmp/ci_dev.cer -k "$KEYCHAIN_PATH" -T /usr/bin/codesign
-            security import /tmp/ci_dev.key -k "$KEYCHAIN_PATH" -T /usr/bin/codesign
-            security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH"
-            security find-identity -v -p codesigning "$KEYCHAIN_PATH" | tee /tmp/signing-identities.txt
-          fi
 
           grep -Eq "Apple Development" /tmp/signing-identities.txt
           echo "SIGNING_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
