@@ -7,54 +7,222 @@ on:
       - main
     paths-ignore:
       - .gitignore
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: macos-26
+    timeout-minutes: 45
+
     steps:
-      - name: 코드 체크아웃
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Xcode 선택
+      - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app
 
-      - name: DerivedData 캐시
+      - name: Verify Xcode
+        run: xcodebuild -version
+
+      - name: Restore DerivedData cache
         uses: irgaly/xcode-cache@v1
         with:
           key: xcode-cache-${{ github.workflow }}-${{ github.sha }}
           restore-keys: xcode-cache-${{ github.workflow }}-
           deriveddata-directory: build/DerivedData
 
-      - name: 빌드
+      - name: Import signing credentials
+        env:
+          DIST_CERT_P12_B64: ${{ secrets.DIST_CERT_P12_B64 }}
+          DIST_CERT_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
+          DEV_CERT_P12_B64: ${{ secrets.DEV_CERT_P12_B64 }}
+          DEV_CERT_PASSWORD: ${{ secrets.DEV_CERT_PASSWORD }}
+          ASC_KEY_BASE64: ${{ secrets.ASC_KEY_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
-          xcodebuild -project Bullpen.xcodeproj \
+          set -euo pipefail
+
+          test -n "$DIST_CERT_P12_B64"
+          test -n "$DIST_CERT_PASSWORD"
+          test -n "$ASC_KEY_BASE64"
+          test -n "$ASC_KEY_ID"
+          test -n "$ASC_ISSUER_ID"
+
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          mkdir -p /tmp/asc
+          echo -n "$ASC_KEY_BASE64" | base64 --decode > /tmp/asc/key.p8
+          echo -n "$DIST_CERT_P12_B64" | base64 --decode > /tmp/dist_cert.p12
+
+          security create-keychain -p "" "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security unlock-keychain -p "" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security import /tmp/dist_cert.p12 -k "$KEYCHAIN_PATH" -P "$DIST_CERT_PASSWORD" -T /usr/bin/codesign
+
+          if [ -n "${DEV_CERT_P12_B64:-}" ]; then
+            echo -n "$DEV_CERT_P12_B64" | base64 --decode > /tmp/dev_cert.p12
+            security import /tmp/dev_cert.p12 -k "$KEYCHAIN_PATH" -P "${DEV_CERT_PASSWORD:-}" -T /usr/bin/codesign
+          fi
+
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | tee /tmp/signing-identities.txt
+
+          cat > /tmp/create_apple_development_certificate.rb <<'RUBY'
+          require 'base64'
+          require 'json'
+          require 'net/http'
+          require 'openssl'
+
+          def jwt
+            key = OpenSSL::PKey.read(File.read('/tmp/asc/key.p8'))
+            now = Time.now.to_i
+            header = Base64.urlsafe_encode64(JSON.generate(alg: 'ES256', kid: ENV.fetch('ASC_KEY_ID')), padding: false)
+            payload = Base64.urlsafe_encode64(JSON.generate(iss: ENV.fetch('ASC_ISSUER_ID'), iat: now, exp: now + 1200, aud: 'appstoreconnect-v1'), padding: false)
+            unsigned = "#{header}.#{payload}"
+            signature = key.sign(OpenSSL::Digest::SHA256.new, unsigned)
+            asn1 = OpenSSL::ASN1.decode(signature).value
+            r = asn1[0].value.to_s(2).rjust(32, "\x00")[-32..]
+            s = asn1[1].value.to_s(2).rjust(32, "\x00")[-32..]
+            "#{unsigned}.#{Base64.urlsafe_encode64(r + s, padding: false)}"
+          end
+
+          auth = { 'Authorization' => "Bearer #{jwt}", 'Content-Type' => 'application/json' }
+
+          def request(method, uri, auth, body = nil)
+            Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
+              request = method.new(uri, auth)
+              request.body = JSON.generate(body) if body
+              http.request(request)
+            end
+          end
+
+          query = URI.encode_www_form(
+            'filter[certificateType]' => 'DEVELOPMENT',
+            'fields[certificates]' => 'certificateType,displayName,serialNumber,expirationDate,activated',
+            'limit' => '200'
+          )
+          list_response = request(Net::HTTP::Get, URI("https://api.appstoreconnect.apple.com/v1/certificates?#{query}"), auth)
+          unless list_response.is_a?(Net::HTTPSuccess)
+            warn list_response.body
+            abort "Failed to list Apple Development certificates: HTTP #{list_response.code}"
+          end
+
+          JSON.parse(list_response.body).fetch('data', []).each do |certificate|
+            delete_response = request(Net::HTTP::Delete, URI("https://api.appstoreconnect.apple.com/v1/certificates/#{certificate.fetch('id')}"), auth)
+            next if delete_response.code == '204'
+
+            warn delete_response.body
+            abort "Failed to revoke Apple Development certificate #{certificate.fetch('id')}: HTTP #{delete_response.code}"
+          end
+
+          body = {
+            data: {
+              type: 'certificates',
+              attributes: {
+                certificateType: 'DEVELOPMENT',
+                csrContent: File.read('/tmp/ci_dev.csr')
+              }
+            }
+          }
+
+          response = request(Net::HTTP::Post, URI('https://api.appstoreconnect.apple.com/v1/certificates'), auth, body)
+          unless response.is_a?(Net::HTTPSuccess)
+            warn response.body
+            abort "Failed to create Apple Development certificate: HTTP #{response.code}"
+          end
+
+          content = JSON.parse(response.body).dig('data', 'attributes', 'certificateContent')
+          abort 'App Store Connect did not return certificateContent' if content.to_s.empty?
+          File.binwrite('/tmp/ci_dev.cer', Base64.decode64(content))
+          RUBY
+
+          if ! grep -Eq "Apple Development" /tmp/signing-identities.txt; then
+            openssl genrsa -out /tmp/ci_dev.key 2048
+            openssl req -new -key /tmp/ci_dev.key -out /tmp/ci_dev.csr -subj "/CN=GitHub Actions CI Development"
+            ruby /tmp/create_apple_development_certificate.rb
+            security import /tmp/ci_dev.cer -k "$KEYCHAIN_PATH" -T /usr/bin/codesign
+            security import /tmp/ci_dev.key -k "$KEYCHAIN_PATH" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH"
+            security find-identity -v -p codesigning "$KEYCHAIN_PATH" | tee /tmp/signing-identities.txt
+          fi
+
+          grep -Eq "Apple Development" /tmp/signing-identities.txt
+          echo "SIGNING_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      - name: Build archive
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APP_BUNDLE_ID: ${{ secrets.APP_BUNDLE_ID }}
+          APP_DEVELOPMENT_TEAM: ${{ secrets.APP_DEVELOPMENT_TEAM }}
+        run: |
+          set -euo pipefail
+
+          BUNDLE_ID="${APP_BUNDLE_ID:-com.bullpen.app}"
+          TEAM_ID="${APP_DEVELOPMENT_TEAM:-ZG44U5JF72}"
+
+          xcodebuild archive \
+            -project Bullpen.xcodeproj \
             -scheme Bullpen \
             -configuration Release \
-            -destination 'generic/platform=iOS' \
+            -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/Bullpen.xcarchive" \
             -derivedDataPath build/DerivedData \
             -jobs $(sysctl -n hw.logicalcpu) \
-            build \
-            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath /tmp/asc/key.p8 \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_IDENTITY="Apple Development" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
             VALIDATE_PRODUCT=NO \
-            ENABLE_USER_SCRIPT_SANDBOXING=NO
+            ENABLE_USER_SCRIPT_SANDBOXING=NO \
+            OTHER_CODE_SIGN_FLAGS="--keychain $SIGNING_KEYCHAIN_PATH"
 
-      - name: IPA 생성
+      - name: Export IPA
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APP_DEVELOPMENT_TEAM: ${{ secrets.APP_DEVELOPMENT_TEAM }}
         run: |
-          APP_PATH=$(find build/DerivedData/Build/Products/Release-iphoneos -name "*.app" -maxdepth 1 | sort | tail -1)
-          APP_NAME=$(basename "$APP_PATH")
-          rm -rf Payload build/ipa
-          mkdir -p build/ipa Payload
-          cp -r "$APP_PATH" Payload/
-          chmod -R 755 "Payload/$APP_NAME"
-          zip -r "build/ipa/${APP_NAME%.app}.ipa" Payload
+          set -euo pipefail
 
-      - name: IPA 업로드
+          TEAM_ID="${APP_DEVELOPMENT_TEAM:-ZG44U5JF72}"
+
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>ad-hoc</string>
+            <key>teamID</key>
+            <string>${TEAM_ID}</string>
+            <key>compileBitcode</key>
+            <false/>
+          </dict>
+          </plist>
+          EOF
+
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Bullpen.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/ipa" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath /tmp/asc/key.p8 \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: Bullpen-ipa
-          path: build/ipa/*.ipa
+          path: ${{ runner.temp }}/ipa/Bullpen.ipa
 
-      - name: 다운로드 링크 summary 출력
+      - name: Summary
         run: |
-          echo "### 불펜 IPA" >> "$GITHUB_STEP_SUMMARY"
-          echo "[다운로드](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Bullpen IPA" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Download](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> "$GITHUB_STEP_SUMMARY"
