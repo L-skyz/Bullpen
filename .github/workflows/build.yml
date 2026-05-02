@@ -65,7 +65,7 @@ jobs:
           security import /tmp/dev_cert.p12 -k "$KEYCHAIN_PATH" -P "$DEV_CERT_PASSWORD" -T /usr/bin/codesign
 
           security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH"
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | tee /tmp/signing-identities.txt
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" > /tmp/signing-identities.txt
 
           grep -Eq "Apple Development" /tmp/signing-identities.txt
           echo "SIGNING_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
